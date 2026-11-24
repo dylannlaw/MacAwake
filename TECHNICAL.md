@@ -191,11 +191,22 @@ See the helper's log:
 cat /var/log/macawake-wake.log
 ```
 
-**Panel snapshot for development:** this opens the panel in a normal window and saves it as a PNG. It doesn't need Screen Recording permission.
+**Panel snapshot for development:** this opens the panel in a normal window and saves it as a PNG. It doesn't need Screen Recording permission. Stop the process afterwards.
 
 ```bash
-open /Applications/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png
+build/MacAwake.app/Contents/MacOS/MacAwake --preview-panel --demo calendar --snapshot /tmp/panel.png
 ```
+
+`--demo` (only with `--preview-panel`) fills the panel with made-up events and two sample calendars. It keeps its settings in a separate `local.macawake.demo` domain, reset on each launch, and holds no power assertions and writes no wake requests, so it's safe to run beside the installed app. Pick the mode with `--demo calendar|always|timer|off` (a timer shows 1h25m left of 2h), and open Settings with `-panel.showSettings YES`. The README screenshots in `docs/screenshots/` are made this way:
+
+```bash
+B=build/MacAwake.app/Contents/MacOS/MacAwake
+$B --preview-panel --demo calendar --snapshot docs/screenshots/calendar.png -panel.showSettings NO
+$B --preview-panel --demo timer    --snapshot docs/screenshots/timer.png    -panel.showSettings NO
+$B --preview-panel --demo calendar --snapshot docs/screenshots/settings.png -panel.showSettings YES
+```
+
+Each command keeps running after it saves the PNG (about 1.5 s); quit it before starting the next. Without `--demo`, the preview is a second copy of the app using your real settings, and it writes the same wake request file as the installed app.
 
 ## Troubleshooting
 
@@ -233,7 +244,7 @@ open /Applications/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png
 | `scripts/protect-repo.sh` | Applies the GitHub settings: protects `main`, turns on security features |
 | `CONTRIBUTING.md`, `SECURITY.md` | How to contribute; how to report security problems privately |
 | `AGENTS.md` | Workflow for anyone (human or AI) changing the project |
-| `docs/` | Change history and design notes |
+| `docs/` | Change history, design notes and the README screenshots (`docs/screenshots/`) |
 
 ## Contributing
 
