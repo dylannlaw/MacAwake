@@ -66,7 +66,6 @@ final class WakeSchedulerTests: XCTestCase {
 
     func testInstallWithoutBundledHelperFails() {
         var ok: Bool?
-        make(makeTempDir(self), bundle: makeBundle(self, wakeVersion: 1, lidVersion: 1)).install { _ in }
         let empty = Bundle(path: makeTempDir(self).path)!
         make(makeTempDir(self), bundle: empty).install { ok = $0 }
         XCTAssertEqual(ok, false)

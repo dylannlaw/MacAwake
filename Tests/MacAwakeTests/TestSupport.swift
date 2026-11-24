@@ -66,7 +66,7 @@ struct Rig {
 func makeRig(_ test: XCTestCase, calendar: Bool = true, seed: (UserDefaults) -> Void = { _ in },
              helperInstalled: Bool = false, lidInstalled: Bool = false, bundle: Bundle = .main,
              observe: Bool = false, requestAccess: (() async throws -> Bool)? = nil,
-             calendars: [EKCalendar]? = nil) -> Rig {
+             calendars: [EKCalendar]? = nil, checkLatest: (() async throws -> AvailableUpdate?)? = nil) -> Rig {
     let dir = makeTempDir(test)
     let suite = "macawake-tests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
@@ -90,6 +90,7 @@ func makeRig(_ test: XCTestCase, calendar: Bool = true, seed: (UserDefaults) -> 
     hooks.runAlert = { _ in state.value.confirm ? .alertFirstButtonReturn : .alertSecondButtonReturn }
     hooks.openURL = { state.value.opened.append($0) }
     hooks.observe = observe
+    hooks.checkLatest = checkLatest
     hooks.device = .desktop
     hooks.calendars = calendars
     hooks.requestAccess = requestAccess
