@@ -32,6 +32,8 @@ This is gap #2 in the 2026-11-24 competitor gap analysis. Amphetamine and Keepin
 - *A separate battery polling timer:* that goes against "`refresh()` is the one place". The IOKit notification plus the 30 s refresh is enough.
 - *Renaming the existing `power: SystemPower?` property:* the new published state is called `powerState` instead, to keep edits to shared lines small while other branches touch the same file.
 
+**With closed-lid keep-awake** ([2026-11-24 · Closed-lid keep-awake](2026-11-24-closed-lid.md), merged in after this was written): a safeguard pause also releases the lid hold, because `updateLid` is given the post-safeguard decision. The lid feature keeps its own stricter cut-off (≤ 20 %, resumes > 25 %) on top. The README and `docs/features/settings.md` list the battery settings in the feature-page layout.
+
 ## Files
 
 - `Sources/MacAwake/PowerSource.swift` (new): `PowerState`, `PauseReason`, `PowerSource`, the fake-power parser and `runBatterySelfTest()`.
