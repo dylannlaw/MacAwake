@@ -143,6 +143,31 @@ final class ControllerSystemTests: XCTestCase {
         XCTAssertFalse(r.controller.heldAwake)
     }
 
+    func testCalendarsAreSortedAndFiltered() async throws {
+        func cal(_ t: String) -> EKCalendar { let c = EKCalendar(for: .event, eventStore: testStore); c.title = t; return c }
+        let b = cal("b work"), a = cal("A home"), c = cal("c")
+        let r = makeRig(self, calendar: false, requestAccess: { true }, calendars: [b, c, a])
+        r.controller.requestAccess()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertEqual(r.controller.calendars.map(\.title), ["A home", "b work", "c"])
+        // The real store has no events for these unsaved calendars; this just walks the lookup path.
+        r.controller.excludedCalendarIDs = [a.calendarIdentifier]
+        XCTAssertNil(r.controller.currentEvent)
+        r.controller.excludedCalendarIDs = [a.calendarIdentifier, b.calendarIdentifier, c.calendarIdentifier]
+        XCTAssertNil(r.controller.currentEvent)
+    }
+
+    func testPreviewLidStatusArguments() {
+        func status(_ s: String) -> LidStatus? { AwakeController.previewLidStatus(from: ["x", "--preview-panel", "--preview-lid-status", s]) }
+        XCTAssertEqual(status("active"), .active)
+        XCTAssertEqual(status("starting"), .starting)
+        XCTAssertEqual(status("battery"), .pausedBattery)
+        XCTAssertEqual(status("hot"), .pausedHot)
+        XCTAssertNil(status("bogus"))
+        XCTAssertNil(AwakeController.previewLidStatus(from: ["--preview-lid-status", "active"]))
+        XCTAssertNil(AwakeController.previewLidStatus(from: ["--preview-panel", "--preview-lid-status"]))
+    }
+
     func testModeLabels() {
         XCTAssertEqual(Mode.allCases.map(\.label), ["Auto — follow calendar and watched apps", "Always awake",
                                                      "Awake for a set time", "Off"])

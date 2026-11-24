@@ -227,8 +227,10 @@ final class AwakeController: ObservableObject {
         var power: () -> PowerState = { PowerState() }
         var lidBattery: () -> LidBattery = { LidBattery(hasBattery: false, onBattery: false, percent: nil) }
         var thermal: () -> ProcessInfo.ThermalState = { .nominal }
-        /// Answer to the lid heat warning, instead of showing it.
-        var confirmLid: () -> Bool = { true }
+        /// Answer to the lid warning alert (replaces showing it). The alert is built either way.
+        var runAlert: ((NSAlert) -> NSApplication.ModalResponse)?
+        /// Calendars to read events from, instead of the system's.
+        var calendars: [EKCalendar]?
         var openURL: (URL) -> Void = { _ in }
         /// Also register the system observers and timers (for the tests that post notifications).
         var observe = false
@@ -338,8 +340,8 @@ final class AwakeController: ObservableObject {
 
     private func reloadCalendars() {
         guard hasAccess else { calendars = []; return }
-        calendars = store.calendars(for: .event).sorted { a, b in
-            let bySource = a.source.title.localizedCaseInsensitiveCompare(b.source.title)
+        calendars = (hooks?.calendars ?? store.calendars(for: .event)).sorted { a, b in
+            let bySource = (a.source?.title ?? "").localizedCaseInsensitiveCompare(b.source?.title ?? "")
             if bySource != .orderedSame { return bySource == .orderedAscending }
             return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
         }
@@ -644,8 +646,9 @@ final class AwakeController: ObservableObject {
 
     /// Debug: `--preview-lid-status active|starting|battery|hot` (with `--preview-panel`) shows that
     /// status in the panel, for snapshots. It changes only what's shown, never the lease.
-    private static let previewLidStatus: LidStatus? = {
-        let a = CommandLine.arguments
+    private static let previewLidStatus: LidStatus? = previewLidStatus(from: CommandLine.arguments)
+
+    static func previewLidStatus(from a: [String]) -> LidStatus? {
         guard a.contains("--preview-panel"), let i = a.firstIndex(of: "--preview-lid-status"), i + 1 < a.count
         else { return nil }
         switch a[i + 1] {
@@ -655,7 +658,7 @@ final class AwakeController: ObservableObject {
         case "hot": return .pausedHot
         default: return nil
         }
-    }()
+    }
 
     /// The mandatory battery floor for the lid hold. On power: always allowed. On battery: paused at or
     /// below `lidBatteryFloor` %, and resumes only above `lidBatteryResume` %, so it doesn't flap.
@@ -732,8 +735,7 @@ final class AwakeController: ObservableObject {
     /// Explains the risk once. Returns false if the user cancels.
     private func confirmLidWarning() -> Bool {
         if defaults.bool(forKey: "lidWarningAcknowledged") { return true }
-        if let hooks { return hooks.confirmLid() }
-        NSApp.activate(ignoringOtherApps: true)
+        if hooks == nil { NSApp.activate(ignoringOtherApps: true) }
         let alert = NSAlert()
         alert.messageText = "Keep your Mac awake with the lid closed?"
         alert.informativeText = """
@@ -746,7 +748,7 @@ final class AwakeController: ObservableObject {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Turn On")
         alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        guard (hooks?.runAlert ?? { $0.runModal() })(alert) == .alertFirstButtonReturn else { return false }
         defaults.set(true, forKey: "lidWarningAcknowledged")
         return true
     }
@@ -865,7 +867,7 @@ final class AwakeController: ObservableObject {
     }
 
     private func relevantEvents(around now: Date) -> [EKEvent] {
-        if let provider = hooks?.events { return provider(now).filter(isRelevant).sorted { $0.startDate < $1.startDate } }
+        if let provider = hooks?.events, hooks?.calendars == nil { return provider(now).filter(isRelevant).sorted { $0.startDate < $1.startDate } }
         let enabled = calendars.filter { !excludedCalendarIDs.contains($0.calendarIdentifier) }
         guard !enabled.isEmpty else { return [] }
 
