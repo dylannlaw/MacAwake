@@ -21,31 +21,44 @@ final class LidScheduler {
 
     /// Its own folder, so lease writes don't wake the wake helper (which watches `MacAwake/`).
     let leaseDir: URL
+    let daemonPlist: URL
+    let helperPath: String
+    private let bundle: Bundle
+    /// Where the helper reports that it holds `SleepDisabled`.
+    let statePath: String
     var leaseFile: URL { leaseDir.appendingPathComponent("lease") }
 
     /// A `--preview-panel` copy must not touch the lease: quitting it would release the running app's hold.
-    private let readOnly = CommandLine.arguments.contains("--preview-panel")
+    private let readOnly: Bool
     private var lastLease: Date??   // nil = never written this run; .some(nil) = last wrote "off"
 
-    init() {
+    /// The parameters exist so tests can point everything at a scratch folder.
+    init(leaseDir: URL? = nil, daemonPlist: URL = LidScheduler.daemonPlist,
+         helperPath: String = LidScheduler.helperPath, statePath: String = LidScheduler.statePath,
+         bundle: Bundle = .main, readOnly: Bool = CommandLine.arguments.contains("--preview-panel")) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        leaseDir = support.appendingPathComponent("MacAwake/lid", isDirectory: true)
+        self.leaseDir = leaseDir ?? support.appendingPathComponent("MacAwake/lid", isDirectory: true)
+        self.daemonPlist = daemonPlist
+        self.helperPath = helperPath
+        self.statePath = statePath
+        self.bundle = bundle
+        self.readOnly = readOnly
     }
 
     var isHelperInstalled: Bool {
-        FileManager.default.fileExists(atPath: Self.daemonPlist.path)
+        FileManager.default.fileExists(atPath: daemonPlist.path)
     }
 
     /// True while the helper reports that MacAwake has `SleepDisabled` on.
     var isHoldActive: Bool {
-        (try? String(contentsOfFile: Self.statePath, encoding: .utf8))?.hasPrefix("1") ?? false
+        (try? String(contentsOfFile: statePath, encoding: .utf8))?.hasPrefix("1") ?? false
     }
 
     var helperNeedsUpdate: Bool {
         guard isHelperInstalled,
-              let bundled = Bundle.main.path(forResource: "lid-helper", ofType: "sh"),
+              let bundled = bundle.path(forResource: "lid-helper", ofType: "sh"),
               let new = AdminShell.helperVersion(atPath: bundled),
-              let old = AdminShell.helperVersion(atPath: Self.helperPath) else { return false }
+              let old = AdminShell.helperVersion(atPath: helperPath) else { return false }
         return old < new
     }
 
@@ -75,7 +88,7 @@ final class LidScheduler {
     // MARK: - Install / remove (one admin prompt each)
 
     func install(completion: @escaping (Bool) -> Void) {
-        guard let helper = Bundle.main.url(forResource: "lid-helper", withExtension: "sh") else {
+        guard let helper = bundle.url(forResource: "lid-helper", withExtension: "sh") else {
             NSLog("MacAwake: lid-helper.sh missing from the app bundle")
             return completion(false)
         }
@@ -89,7 +102,7 @@ final class LidScheduler {
 
         let plist: [String: Any] = [
             "Label": Self.label,
-            "ProgramArguments": ["/bin/sh", Self.helperPath, leaseFile.path, Self.statePath],
+            "ProgramArguments": ["/bin/sh", helperPath, leaseFile.path, statePath],
             "WatchPaths": [leaseDir.path],
             "StartInterval": 60,   // the watchdog: a lapsed lease is noticed even if nothing writes
             "RunAtLoad": true,     // and at boot, before anyone logs in
@@ -106,10 +119,10 @@ final class LidScheduler {
         }
 
         let q = AdminShell.q
-        let dest = Self.daemonPlist.path
+        let dest = daemonPlist.path
         let script = [
             "/bin/mkdir -p /Library/PrivilegedHelperTools",
-            "/usr/bin/install -o root -g wheel -m 755 \(q(helper.path)) \(q(Self.helperPath))",
+            "/usr/bin/install -o root -g wheel -m 755 \(q(helper.path)) \(q(helperPath))",
             "/usr/bin/install -o root -g wheel -m 644 \(q(tmpPlist.path)) \(q(dest))",
             "/bin/launchctl bootout system/\(Self.label) 2>/dev/null || true",
             "/bin/launchctl bootstrap system \(q(dest))",
@@ -127,9 +140,9 @@ final class LidScheduler {
         let script = [
             "/bin/launchctl bootout system/\(Self.label) 2>/dev/null || true",
             // Turn sleep back on, but only if MacAwake was the one that turned it off.
-            "if [ -f \(q(Self.statePath)) ] && [ \"$(/usr/bin/head -c 1 \(q(Self.statePath)))\" = 1 ]; then " +
+            "if [ -f \(q(statePath)) ] && [ \"$(/usr/bin/head -c 1 \(q(statePath)))\" = 1 ]; then " +
                 "/usr/bin/pmset -a disablesleep 0; fi",
-            "/bin/rm -f \(q(Self.daemonPlist.path)) \(q(Self.helperPath)) \(q(Self.statePath))",
+            "/bin/rm -f \(q(daemonPlist.path)) \(q(helperPath)) \(q(statePath))",
         ].joined(separator: "; ")
         AdminShell.run(script, prompt: "MacAwake wants to remove its lid-closed helper.") { ok in
             if ok { self.lastLease = nil }
@@ -152,9 +165,13 @@ struct LidBattery {
               let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else {
             return LidBattery(hasBattery: false, onBattery: false, percent: nil)
         }
-        for source in list {
-            guard let d = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
-                  d[kIOPSTypeKey] as? String == kIOPSInternalBatteryType else { continue }
+        return parse(list.compactMap { IOPSGetPowerSourceDescription(info, $0)?.takeUnretainedValue() as? [String: Any] })
+    }
+
+    /// The internal battery among the power sources IOKit describes, if there is one.
+    static func parse(_ descriptions: [[String: Any]]) -> LidBattery {
+        for d in descriptions {
+            guard d[kIOPSTypeKey] as? String == kIOPSInternalBatteryType else { continue }
             let state = d[kIOPSPowerSourceStateKey] as? String
             var pct: Int?
             if let cur = d[kIOPSCurrentCapacityKey] as? Int, let max = d[kIOPSMaxCapacityKey] as? Int, max > 0 {
@@ -174,13 +191,16 @@ final class PowerSourceWatcher {
     init(onChange: @escaping () -> Void) {
         self.onChange = onChange
         let ctx = Unmanaged.passUnretained(self).toOpaque()
-        if let s = IOPSNotificationCreateRunLoopSource({ ctx in
-            guard let ctx else { return }
-            Unmanaged<PowerSourceWatcher>.fromOpaque(ctx).takeUnretainedValue().onChange()
-        }, ctx)?.takeRetainedValue() {
+        if let s = IOPSNotificationCreateRunLoopSource({ ctx in PowerSourceWatcher.deliver(ctx) }, ctx)?.takeRetainedValue() {
             CFRunLoopAddSource(CFRunLoopGetMain(), s, .commonModes)
             source = s
         }
+    }
+
+    /// Passes an IOKit callback on to the watcher it was registered for.
+    static func deliver(_ ctx: UnsafeMutableRawPointer?) {
+        guard let ctx else { return }
+        Unmanaged<PowerSourceWatcher>.fromOpaque(ctx).takeUnretainedValue().onChange()
     }
 
     deinit {

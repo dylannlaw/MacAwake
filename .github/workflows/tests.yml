@@ -1,0 +1,28 @@
+# Runs the unit tests with a coverage gate on every pull request and every push to main that touches
+# code or tests. Documentation-only changes skip it. It never builds or publishes a release.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths: ["Sources/**", "Tests/**", "Helper/**", "Package.swift", "scripts/coverage.sh", ".github/workflows/tests.yml"]
+  pull_request:
+    paths: ["Sources/**", "Tests/**", "Helper/**", "Package.swift", "scripts/coverage.sh", ".github/workflows/tests.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Unit tests and coverage (95% minimum)
+        run: ./scripts/coverage.sh

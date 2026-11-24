@@ -18,11 +18,35 @@
 # - Third-party actions are pinned to a commit SHA. Dependabot proposes updates.
 name: Build & Release
 
+# Only changes to what ships build and release: the app code, helpers, packaging files and this workflow.
+# Documentation, tests, screenshots and other repo files never trigger a build or a new release.
+# (workflow_dispatch still lets you build by hand.) Keep the two lists the same.
 on:
   push:
     branches: [main]
-    paths-ignore: ["**/*.md", "docs/**", "Branding/*.png"]
+    paths:
+      - "Sources/**"
+      - "Helper/**"
+      - "Resources/**"
+      - "Info.plist"
+      - "MacAwake.entitlements"
+      - "Package.swift"
+      - "VERSION"
+      - "build.sh"
+      - "install.sh"
+      - ".github/workflows/release.yml"
   pull_request:
+    paths:
+      - "Sources/**"
+      - "Helper/**"
+      - "Resources/**"
+      - "Info.plist"
+      - "MacAwake.entitlements"
+      - "Package.swift"
+      - "VERSION"
+      - "build.sh"
+      - "install.sh"
+      - ".github/workflows/release.yml"
   workflow_dispatch:
 
 permissions:

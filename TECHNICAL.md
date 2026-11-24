@@ -209,6 +209,19 @@ Options for `build.sh` (environment variables):
 
 The app icon is drawn in code: `swift Branding/make-icon.swift` writes `Resources/AppIcon.icns` and `Branding/AppIcon-1024.png`. It uses no SF Symbols, which Apple's licence doesn't allow in app icons.
 
+## Unit tests
+
+```bash
+./scripts/coverage.sh
+```
+
+Runs the XCTest suite in `Tests/MacAwakeTests` and fails if line coverage of the app logic is under 95% (`MIN_COVERAGE=90 ./scripts/coverage.sh` changes the bar). XCTest ships with Xcode, not the Command Line Tools, so the script uses `/Applications/Xcode.app` when it's there. `build.sh` still works with the Command Line Tools alone.
+
+- The SwiftUI views in `MacAwakeApp.swift` are left out of the coverage figure. They're checked by looking at the `--demo` snapshots (see `AGENTS.md`).
+- Tests never touch the real Mac: each controller gets its own `UserDefaults` suite, its own scratch folders for the wake request and lid lease, no observers or timers, and a fake admin runner (`AdminShell.runner`), so there's no calendar prompt, admin dialog or real wake schedule. `AwakeController.TestHooks` supplies events, power, battery, temperature and the lid warning's answer.
+- Real processes (`sleep`, `yes`, a re-signed copy of `sleep`) exercise the process watcher and the `macawake run` holds.
+- `.github/workflows/tests.yml` runs it for pull requests and pushes that change code or tests.
+
 Don't run the bare binary from `swift run`. Without the Info.plist, macOS kills it when it asks for calendar access. Always use `build.sh`.
 
 ## Releases and signing
@@ -218,7 +231,8 @@ Every push to `main` that changes the app runs [`.github/workflows/release.yml`]
 - Checks `install.sh` with `bash -n`.
 - Builds a universal app and publishes a GitHub Release named `v<VERSION>.<run number>` (for example `v1.0.12`).
 - Attaches `install.sh`, `MacAwake.zip` and `MacAwake.zip.sha256`.
-- Doesn't release for pull requests (they're only built) or for pushes that only change Markdown, `docs/` or the icon preview.
+- Only runs when something that ships changes: `Sources/`, `Helper/`, `Resources/`, `Info.plist`, `MacAwake.entitlements`, `Package.swift`, `VERSION`, `build.sh`, `install.sh` or the workflow itself (or when started by hand). Changes to documentation, tests, scripts or screenshots neither build nor release.
+- Doesn't release for pull requests (they're only built).
 
 The workflow is split into a `build` job (read-only token) and a `release` job (the only one that can write, and only on `main`). It uses `pull_request`, never `pull_request_target`, so pull requests from forks get no secrets. Signing secrets go only to the step that uses them, never to `build.sh`. Actions are pinned to commit SHAs, and Dependabot (`.github/dependabot.yml`) proposes updates monthly.
 
@@ -443,7 +457,10 @@ MACAWAKE_FAKE_DEVICE=desktop MACAWAKE_FAKE_POWER=ac:100 build/MacAwake.app/Conte
 | `MacAwake.entitlements` | Calendar entitlement for hardened-runtime signing |
 | `Info.plist`, `VERSION`, `build.sh`, `Package.swift` | Packaging and build |
 | `install.sh` | The curl installer, published with each release |
-| `.github/workflows/release.yml` | Builds pull requests; builds and releases pushes to `main` |
+| `.github/workflows/release.yml` | Builds code pull requests; builds and releases code pushes to `main` |
+| `.github/workflows/tests.yml` | Runs the unit tests and the coverage check |
+| `Tests/MacAwakeTests/` | Unit tests and their helpers |
+| `scripts/coverage.sh` | Runs the tests and fails under 95% coverage |
 | `.github/CODEOWNERS`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/` | Review ownership and templates for contributors |
 | `scripts/protect-repo.sh` | Applies the GitHub settings: protects `main`, turns on security features |
 | `scripts/screenshots.sh` | Retakes every screenshot in `docs/screenshots/` from the built app with `--demo` data |
