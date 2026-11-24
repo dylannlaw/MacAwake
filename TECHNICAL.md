@@ -108,19 +108,57 @@ Don't run the bare binary from `swift run`. Without the Info.plist, macOS kills 
 
 Every push to `main` that changes the app runs [`.github/workflows/release.yml`](.github/workflows/release.yml) on `macos-15`. The workflow:
 
+- Checks `install.sh` with `bash -n`.
 - Builds a universal app and publishes a GitHub Release named `v<VERSION>.<run number>` (for example `v1.0.12`).
-- Attaches `MacAwake.zip` and `MacAwake.zip.sha256`.
+- Attaches `install.sh`, `MacAwake.zip` and `MacAwake.zip.sha256`.
 - Doesn't release for pull requests (they're only built) or for pushes that only change Markdown, `docs/` or the icon preview.
 
-The README's download link, `releases/latest/download/MacAwake.zip`, always points to the newest release. To change the major or minor version, edit `VERSION`.
+The workflow is split into a `build` job (read-only token) and a `release` job (the only one that can write, and only on `main`). It uses `pull_request`, never `pull_request_target`, so pull requests from forks get no secrets. Signing secrets go only to the step that uses them, never to `build.sh`. Actions are pinned to commit SHAs, and Dependabot (`.github/dependabot.yml`) proposes updates monthly.
 
-To check a download:
+To change the major or minor version, edit `VERSION`.
+
+### Installing with curl
+
+The README installs with:
+
+```bash
+curl -fsSL https://github.com/dylannlaw/MacAwake/releases/latest/download/install.sh | bash
+```
+
+`releases/latest/download/…` always points at the newest release, so the command never changes and also updates an existing install. [`install.sh`](install.sh):
+
+1. Checks it's macOS 14 or later.
+2. Downloads `MacAwake.zip` and `MacAwake.zip.sha256` from the same release over https only (redirects too) and checks the hash.
+3. Unzips with `ditto` and runs `codesign --verify --strict` on the app.
+4. Quits a running copy at the install path (matched by path, so other copies are left alone), replaces `/Applications/MacAwake.app` (using `sudo` only if the folder isn't writable), removes any quarantine flag and opens the app.
+
+Everything runs inside `main()`, called on the last line, so a download that's cut off runs nothing.
+
+**Why curl instead of a browser download:** browsers set `com.apple.quarantine` on downloads, and Gatekeeper then blocks an app that isn't Developer ID signed and notarized ("can't check for malicious software" → **Open Anyway**). `curl` doesn't set that flag and Gatekeeper only assesses quarantined files, so the ad-hoc signed app opens straight away without a paid Apple Developer account. The trade-off is that Apple's malware check is skipped; the checksum and signature check in `install.sh` confirm the download matches the release, but trust comes from the GitHub repository, not Apple. Anyone careful can read the script first:
+
+```bash
+curl -fsSL https://github.com/dylannlaw/MacAwake/releases/latest/download/install.sh
+```
+
+Settings for testing `install.sh` (environment variables):
+
+| Variable | Effect |
+|---|---|
+| `MACAWAKE_DOWNLOAD_BASE` | Where to fetch the zip and checksum from. Accepts `file://` for local tests. Default: the latest release. |
+| `MACAWAKE_INSTALL_DIR` | Install folder. Default: `/Applications`. |
+| `MACAWAKE_NO_OPEN=1` | Don't open the app afterwards. |
+
+The zip is still a release asset (the script needs it). Installing it by hand works too, but then the app is quarantined and needs **Open Anyway** once. To check a manual download:
 
 ```bash
 shasum -a 256 -c MacAwake.zip.sha256
 ```
 
-**Signing:** without secrets, releases are ad-hoc signed. Users then need **Open Anyway** the first time, and calendar permission can reset after updates. To sign with a Developer ID and notarize, add these repository secrets:
+The download URLs only work while the repository is public; a private repository's release assets return 404 to anonymous `curl`.
+
+### Signing
+
+Without secrets, releases are ad-hoc signed. Installed with curl, they open normally; the remaining cost is that calendar permission can reset after updates, because an ad-hoc signature changes with every build. To sign with a Developer ID and notarize, add these repository secrets:
 
 | Secret | Value |
 |---|---|
@@ -153,11 +191,22 @@ See the helper's log:
 cat /var/log/macawake-wake.log
 ```
 
-**Panel snapshot for development:** this opens the panel in a normal window and saves it as a PNG. It doesn't need Screen Recording permission.
+**Panel snapshot for development:** this opens the panel in a normal window and saves it as a PNG. It doesn't need Screen Recording permission. Stop the process afterwards.
 
 ```bash
-open /Applications/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png
+build/MacAwake.app/Contents/MacOS/MacAwake --preview-panel --demo calendar --snapshot /tmp/panel.png
 ```
+
+`--demo` (only with `--preview-panel`) fills the panel with made-up events and two sample calendars. It keeps its settings in a separate `local.macawake.demo` domain, reset on each launch, and holds no power assertions and writes no wake requests, so it's safe to run beside the installed app. Pick the mode with `--demo calendar|always|timer|off` (a timer shows 1h25m left of 2h), and open Settings with `-panel.showSettings YES`. The README screenshots in `docs/screenshots/` are made this way:
+
+```bash
+B=build/MacAwake.app/Contents/MacOS/MacAwake
+$B --preview-panel --demo calendar --snapshot docs/screenshots/calendar.png -panel.showSettings NO
+$B --preview-panel --demo timer    --snapshot docs/screenshots/timer.png    -panel.showSettings NO
+$B --preview-panel --demo calendar --snapshot docs/screenshots/settings.png -panel.showSettings YES
+```
+
+Each command keeps running after it saves the PNG (about 1.5 s); quit it before starting the next. Without `--demo`, the preview is a second copy of the app using your real settings, and it writes the same wake request file as the installed app.
 
 ## Troubleshooting
 
@@ -167,7 +216,7 @@ open /Applications/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png
   tccutil reset Calendar local.macawake.app
   ```
 
-- **"Can't be opened" or "can't check for malicious software".** The release isn't Developer ID signed. Go to **System Settings › Privacy & Security** and click **Open Anyway**. Or remove the quarantine flag:
+- **"Can't be opened" or "can't check for malicious software".** The app was downloaded in a browser, so it's quarantined, and the release isn't Developer ID signed. Reinstall with the curl command, or go to **System Settings › Privacy & Security** and click **Open Anyway**, or remove the quarantine flag:
 
   ```bash
   xattr -dr com.apple.quarantine /Applications/MacAwake.app
@@ -189,11 +238,24 @@ open /Applications/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png
 | `Resources/AppIcon.icns`, `Branding/` | App icon and the script that draws it |
 | `MacAwake.entitlements` | Calendar entitlement for hardened-runtime signing |
 | `Info.plist`, `VERSION`, `build.sh`, `Package.swift` | Packaging and build |
+| `install.sh` | The curl installer, published with each release |
 | `.github/workflows/release.yml` | Builds pull requests; builds and releases pushes to `main` |
+| `.github/CODEOWNERS`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/` | Review ownership and templates for contributors |
+| `scripts/protect-repo.sh` | Applies the GitHub settings: protects `main`, turns on security features |
+| `CONTRIBUTING.md`, `SECURITY.md` | How to contribute; how to report security problems privately |
 | `AGENTS.md` | Workflow for anyone (human or AI) changing the project |
-| `docs/` | Change history and design notes (kept locally; excluded by `.gitignore`) |
+| `docs/` | Change history, design notes and the README screenshots (`docs/screenshots/`) |
 
 ## Contributing
+
+Outside contributors fork the repo and open a pull request; see [CONTRIBUTING.md](CONTRIBUTING.md). Security problems go to [SECURITY.md](SECURITY.md).
+
+**Repository protection.** `scripts/protect-repo.sh` sets up GitHub (run it once the repo is public; GitHub Free has no rulesets for private repos):
+- A ruleset on `main` blocks direct pushes, force pushes and deletion. Changes need a pull request with one code-owner approval, the `build` check passing, resolved review threads and a linear history (squash merge only).
+- Admins can bypass only through a pull request, so the maintainer can merge their own PRs but still can't push to `main`.
+- Only people with write access can merge. The maintainer is the only collaborator, and outside contributors work from forks.
+- Workflows from first-time and outside contributors wait for approval before they run.
+- Private vulnerability reporting, secret scanning, push protection and Dependabot alerts are on.
 
 Read [AGENTS.md](AGENTS.md) first. In short:
 1. Read the change notes in `docs/`.
