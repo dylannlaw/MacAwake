@@ -82,6 +82,8 @@ Click a feature to read how it works and when to use it.
 
 🤖 **Stay awake while your apps are working.** Pick the apps or tools to watch, such as an AI coding agent. Your Mac stays awake while they're busy and sleeps a few minutes after they finish. Set it up in **Settings** (Calendar mode).
 
+💻 **Keep running with the lid closed.** On a MacBook, you can close the lid and walk away while MacAwake keeps your Mac awake, even on battery. Your AI agent or long job keeps going. Turn it on in **Settings**.
+
 🤖 **Stay awake while a job runs.** Start a long task from the Terminal or Shortcuts, and MacAwake keeps your Mac awake until it finishes, then goes back to what it was doing.
 
 ## Get started
@@ -109,7 +111,7 @@ Click the coffee cup in the menu bar to open the panel.
 - **At the top**, you'll see what MacAwake is doing right now. For example: "Awake for an event · until 3:00 PM", or how long the timer has left.
 - **Choose a mode** by clicking one of the four tiles: [Calendar](docs/features/calendar.md), [Always](docs/features/always-on.md), [Timer](docs/features/timer.md) or [Off](docs/features/off.md).
 - **Coming up** lists your next few events. The one keeping your Mac awake right now is marked **Now**.
-- **Settings** (click to open) holds the options for calendar events, watched apps and [waking from sleep](docs/features/wake-from-sleep.md). To watch an app, click **Add** under **Stay awake while apps are working** and pick an AI agent (like Claude Code or Codex), one of your open apps, or a command by name; choose **While working** or **While open**, and how long to stay awake after it finishes. Every option is explained in [Settings and the menu bar](docs/features/settings.md).
+- **Settings** (click to open) holds the options for calendar events, watched apps and [waking from sleep](docs/features/wake-from-sleep.md). To watch an app, click **Add** under **Stay awake while apps are working** and pick an AI agent (like Claude Code or Codex), one of your open apps, or a command by name; choose **While working** or **While open**, and how long to stay awake after it finishes. On a MacBook, you can also turn on **Keep awake with lid closed** there (click **Set Up…** and enter your Mac password once). Every option is explained in [Settings and the menu bar](docs/features/settings.md).
 
 **The menu bar icon** tells you the state at a glance:
 - ☕ filled: keeping your Mac awake
@@ -131,7 +133,8 @@ The full list of links and commands, and how to set up the command, are in the [
 - **Which calendars?** Any calendar that appears in Apple's Calendar app, including Google, Outlook and Exchange. Add the account in **System Settings › Internet Accounts**.
 - **Declined or cancelled events** never keep your Mac awake.
 - **Watched apps** only count while the Mac is awake: they can't wake a sleeping Mac, and an AI agent left open but idle doesn't keep it awake when set to **While working**.
-- **Closing a MacBook's lid** still puts it to sleep, unless it's connected to power and an external display.
+- **Closing a MacBook's lid** puts it to sleep as usual, unless you've turned on **Keep awake with lid closed**. With that on, the Mac only stays awake with the lid closed while MacAwake is keeping it awake (for example during an event, while a watched app or command is working, in Always mode or while a timer runs). It goes back to normal as soon as MacAwake stops, and if MacAwake quits or crashes, normal sleep comes back by itself within a few minutes.
+- **Don't put your Mac in a bag or sleeve** while it's awake with the lid closed: it can overheat. MacAwake pauses lid-closed mode if the Mac gets too hot, or if the battery drops to 20% (it starts again above 25% or when you plug in). While it's on, choosing **Sleep** from the Apple menu won't put the Mac to sleep.
 - **New events while your Mac sleeps:** if you add an event from your phone while the Mac is asleep, MacAwake still catches it by briefly checking your calendar every 15 minutes (you can change this). An event added less than 15 minutes before it starts might be missed. See [Wake from sleep](docs/features/wake-from-sleep.md#catching-events-added-while-your-mac-sleeps).
 - **Quitting MacAwake** lets your Mac sleep normally again and cancels any planned wake-up.
 - **Updating:** paste the same line into Terminal again. It replaces the old version and keeps your settings. If your events stop showing afterwards, allow calendar access again.

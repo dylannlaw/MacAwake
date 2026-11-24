@@ -78,6 +78,32 @@ A sleeping Mac runs no apps, so MacAwake schedules a hardware wake ahead of time
   - Only the next event is scheduled; after each wake, the following one is scheduled.
 - **Removing it:** **⋯ › Remove Wake Helper…** in the panel footer unloads the daemon, deletes its files and cancels the scheduled wake.
 
+## Lid closed: the lid helper
+
+IOKit power assertions (what `caffeinate` uses) can't stop clamshell sleep on battery. So **Keep awake with lid closed** uses the system-wide `SleepDisabled` setting (`pmset -a disablesleep 1`), switched by a second small root helper. It's separate from the wake helper, so people who never turn this on never get it.
+
+1. **Set Up…** next to the setting shows a one-time heat warning, asks for an admin password and installs:
+   - `/Library/LaunchDaemons/local.macawake.lidhelper.plist`
+   - `/Library/PrivilegedHelperTools/local.macawake.lidhelper` (a root-owned copy of `Helper/lid-helper.sh`)
+2. **The lease:** the app never asks for "on". It writes a Unix timestamp about 3 minutes ahead to `~/Library/Application Support/MacAwake/lid/lease`, and renews it (about once a minute) for as long as it wants the lid hold. It writes an empty file to release straight away: when MacAwake stops keeping awake, on quit, or when a safety check trips.
+3. **The helper** runs when the lease folder changes (`WatchPaths`), every 60 seconds (`StartInterval`, the watchdog) and at boot (`RunAtLoad`):
+   - Valid lease and `SleepDisabled` off: runs `pmset -a disablesleep 1` and records ownership in `/var/db/local.macawake.lidawake`.
+   - No valid lease and MacAwake owns it: runs `pmset -a disablesleep 0` and removes the record.
+   - If something else set `SleepDisabled`, it never touches it and never claims it.
+4. **Crash safety:** if the app crashes, is force-quit or the Mac restarts, the lease lapses, and the helper restores normal sleep within about 4 minutes (lease plus one tick), or at boot.
+
+**When it applies:** the setting is on, MacAwake is keeping the Mac awake (an event window, a busy watched app, a `macawake run` hold, Always or Timer), the helper is installed, and both safety checks pass:
+- **Battery:** on battery, it pauses at or below 20%, and resumes only above 25% or on power. This floor can't be lowered.
+- **Heat:** it pauses while `ProcessInfo.thermalState` is `.serious` or `.critical`.
+
+The panel's status area shows "Lid can be closed" or the reason it's paused. The setting is hidden on Macs without a built-in battery.
+
+**Security:** the helper reads at most 32 bytes, ignores symlinks and non-regular files, and accepts only digits for a time from now to 5 minutes ahead. The only `pmset` commands it runs are the fixed `-g`, `-a disablesleep 1` and `-a disablesleep 0`; nothing from the file is passed on.
+
+**Helper versions:** each helper script carries a `# macawake-helper-version: N` line (none means 1). If an installed copy is older than the one in the app, the panel's **⋯** menu offers **Update Helpers…**.
+
+**Removing it:** **⋯ › Remove Lid-Closed Helper…** unloads the daemon, runs `pmset -a disablesleep 0` only if MacAwake had set it, and deletes the files.
+
 ## Settings reference
 
 | Setting | Default | What it does |
@@ -89,6 +115,7 @@ A sleeping Mac runs no apps, so MacAwake schedules a hardware wake ahead of time
 | Stay awake after | At end | Keeps awake this long after an event ends. |
 | Wake Mac from sleep for events | On | Schedules wakes. Shown once the helper is installed. |
 | Check for new events | Every 15 min | Check-in wakes while asleep (`sleepCheckMinutes`: 0, 5, 15, 30, 60). 0 = never. 5 min catches late-added events sooner but wakes the Mac 12 times an hour, which costs more battery. Shown when wake is on. |
+| Keep awake with lid closed | Off | `lidClosedAwake`. While MacAwake keeps the Mac awake, a closed lid doesn't sleep it, even on battery. Needs the lid helper. Paused at ≤ 20 % battery (resumes > 25 %) or when the Mac is hot. MacBooks only. |
 | Calendars | All | Which calendars count. |
 | Stay awake while apps are working | Off | `watchAppsEnabled`. Calendar mode also follows watched items. |
 | Watched apps | None | `watchedItems`: JSON array of `{kind: app\|command, id, name, rule: working\|running}`. **Add › AI agents** adds `claude`, `codex`, `gemini`, `aider`, `cursor-agent`, `opencode`. |
@@ -202,6 +229,12 @@ curl -fsSL https://github.com/dylannlaw/MacAwake/releases/latest/download/instal
 
 Everything runs inside `main()`, called on the last line, so a download that's cut off runs nothing.
 
+The script must work with macOS's built-in `/bin/bash` (3.2) as well as newer bash (for example Homebrew's), because `| bash` runs whichever comes first in `PATH`. Bash 3.2 in a UTF-8 locale treats non-ASCII bytes right after a bare `$name` as part of the variable name, so write `${name}…`, never `$name…`. The release workflow checks for this. Test changes with both:
+
+```bash
+cat install.sh | LC_ALL=en_US.UTF-8 MACAWAKE_DOWNLOAD_BASE=file:///path/to/assets MACAWAKE_INSTALL_DIR=/tmp/macawake-test MACAWAKE_NO_OPEN=1 /bin/bash
+```
+
 **Why curl instead of a browser download:** browsers set `com.apple.quarantine` on downloads, and Gatekeeper then blocks an app that isn't Developer ID signed and notarized ("can't check for malicious software" → **Open Anyway**). `curl` doesn't set that flag and Gatekeeper only assesses quarantined files, so the ad-hoc signed app opens straight away without a paid Apple Developer account. The trade-off is that Apple's malware check is skipped; the checksum and signature check in `install.sh` confirm the download matches the release, but trust comes from the GitHub repository, not Apple. Anyone careful can read the script first:
 
 ```bash
@@ -281,6 +314,18 @@ See the helper's log:
 cat /var/log/macawake-wake.log
 ```
 
+See whether the lid hold is on, and whether MacAwake set it (the file exists only then):
+
+```bash
+pmset -g | grep SleepDisabled
+```
+
+```bash
+cat /var/db/local.macawake.lidawake /var/log/macawake-lid.log
+```
+
+**Lid states in a snapshot:** add `--preview-lid-status active|starting|battery|hot` to a `--preview-panel` run to show that status (and the lid setting, even on a desktop Mac). It changes only what's shown.
+
 **Panel snapshot for development:** this opens the panel in a normal window and saves it as a PNG. It doesn't need Screen Recording permission. Stop the process afterwards.
 
 ```bash
@@ -309,7 +354,8 @@ It takes `calendar.png`, `timer.png`, `always.png`, `off.png` and `settings.png`
   xattr -dr com.apple.quarantine /Applications/MacAwake.app
   ```
 
-- **The Mac still sleeps when the lid closes.** That's expected; `caffeinate` behaves the same way. Use clamshell mode (external power and display) to keep a closed MacBook awake.
+- **The Mac still sleeps when the lid closes.** Turn on **Keep awake with lid closed** (MacBooks only). It applies only while MacAwake is keeping the Mac awake, and pauses at 20 % battery or when the Mac is hot; the panel says which.
+- **The Mac won't sleep at all.** Check `pmset -g | grep SleepDisabled`. If `/var/db/local.macawake.lidawake` exists, MacAwake set it; the helper clears it within about 4 minutes of MacAwake stopping. If that file doesn't exist, something else set it, and MacAwake leaves it alone.
 - **The Mac didn't wake for an event.** Check that the helper is set up and a wake is listed by `pmset -g sched`. An event added while the Mac was asleep is only seen at the next check-in; `pmset -g log | grep -i macawake` shows whether check-in wakes happened.
 
 ## Project layout
@@ -321,10 +367,13 @@ It takes `calendar.png`, `timer.png`, `always.png`, `off.png` and `settings.png`
 | `Sources/MacAwake/ProcessWatcher.swift` | Watched apps and commands: process scan and CPU sampling |
 | `Sources/MacAwake/SleepAssertion.swift` | Power assertions (the `caffeinate` part) |
 | `Sources/MacAwake/SystemPower.swift` | Wake notifications from IOKit, including dark wakes |
-| `Sources/MacAwake/WakeScheduler.swift` | Writes wake requests; installs and removes the helper |
+| `Sources/MacAwake/WakeScheduler.swift` | Writes wake requests; installs and removes the wake helper |
+| `Sources/MacAwake/LidScheduler.swift` | Lid lease, lid helper install and removal, battery reading |
+| `Sources/MacAwake/AdminShell.swift` | Admin-password prompt and helper version check, shared by both helpers |
+| `Helper/wake-helper.sh` | The root helper that schedules wakes with `pmset` |
+| `Helper/lid-helper.sh` | The root helper that switches `pmset disablesleep` while a lease is valid |
 | `Sources/MacAwake/URLCommand.swift` | `macawake://` parsing and validation; the app delegate that receives URLs |
 | `Sources/MacAwake/ProcessHolds.swift` | Keep-awake holds for `macawake run` |
-| `Helper/wake-helper.sh` | The root helper that calls `pmset` |
 | `Helper/macawake-cli.sh` | The `macawake` command (copied into the app as `Resources/macawake`) |
 | `Resources/AppIcon.icns`, `Branding/` | App icon and the script that draws it |
 | `MacAwake.entitlements` | Calendar entitlement for hardened-runtime signing |
