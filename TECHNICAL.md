@@ -112,6 +112,8 @@ Every push to `main` that changes the app runs [`.github/workflows/release.yml`]
 - Attaches `MacAwake.zip` and `MacAwake.zip.sha256`.
 - Doesn't release for pull requests (they're only built) or for pushes that only change Markdown, `docs/` or the icon preview.
 
+The workflow is split into a `build` job (read-only token) and a `release` job (the only one that can write, and only on `main`). It uses `pull_request`, never `pull_request_target`, so pull requests from forks get no secrets. Signing secrets go only to the step that uses them, never to `build.sh`. Actions are pinned to commit SHAs, and Dependabot (`.github/dependabot.yml`) proposes updates monthly.
+
 The README's download link, `releases/latest/download/MacAwake.zip`, always points to the newest release. To change the major or minor version, edit `VERSION`.
 
 To check a download:
@@ -190,10 +192,22 @@ open /Applications/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png
 | `MacAwake.entitlements` | Calendar entitlement for hardened-runtime signing |
 | `Info.plist`, `VERSION`, `build.sh`, `Package.swift` | Packaging and build |
 | `.github/workflows/release.yml` | Builds pull requests; builds and releases pushes to `main` |
+| `.github/CODEOWNERS`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/` | Review ownership and templates for contributors |
+| `scripts/protect-repo.sh` | Applies the GitHub settings: protects `main`, turns on security features |
+| `CONTRIBUTING.md`, `SECURITY.md` | How to contribute; how to report security problems privately |
 | `AGENTS.md` | Workflow for anyone (human or AI) changing the project |
-| `docs/` | Change history and design notes (kept locally; excluded by `.gitignore`) |
+| `docs/` | Change history and design notes |
 
 ## Contributing
+
+Outside contributors fork the repo and open a pull request; see [CONTRIBUTING.md](CONTRIBUTING.md). Security problems go to [SECURITY.md](SECURITY.md).
+
+**Repository protection.** `scripts/protect-repo.sh` sets up GitHub (run it once the repo is public; GitHub Free has no rulesets for private repos):
+- A ruleset on `main` blocks direct pushes, force pushes and deletion. Changes need a pull request with one code-owner approval, the `build` check passing, resolved review threads and a linear history (squash merge only).
+- Admins can bypass only through a pull request, so the maintainer can merge their own PRs but still can't push to `main`.
+- Only people with write access can merge. The maintainer is the only collaborator, and outside contributors work from forks.
+- Workflows from first-time and outside contributors wait for approval before they run.
+- Private vulnerability reporting, secret scanning, push protection and Dependabot alerts are on.
 
 Read [AGENTS.md](AGENTS.md) first. In short:
 1. Read the change notes in `docs/`.
