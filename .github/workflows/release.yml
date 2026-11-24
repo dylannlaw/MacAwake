@@ -1,0 +1,97 @@
+# Builds MacAwake on every pull request, and on every push to main also publishes a GitHub Release
+# with MacAwake.zip. The README links to releases/latest/download/MacAwake.zip, which always points
+# at the newest build.
+#
+# Signing is optional. Without the secrets below the app is ad-hoc signed (users must allow it in
+# System Settings › Privacy & Security the first time). With them it's Developer ID signed and notarized.
+#   MACOS_CERT_P12        base64 of a "Developer ID Application" .p12 export
+#   MACOS_CERT_PASSWORD   password of that .p12
+#   MACOS_SIGN_IDENTITY   e.g. "Developer ID Application: Your Name (TEAMID)"
+#   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD   for notarytool (app-specific password)
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**/*.md", "docs/**", "Branding/*.png"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out version
+        id: version
+        run: |
+          base=$(tr -d '[:space:]' < VERSION)
+          echo "version=${base}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing certificate
+        if: env.MACOS_CERT_P12 != '' && github.event_name != 'pull_request'
+        run: |
+          KC="$RUNNER_TEMP/build.keychain-db"
+          KC_PW=$(uuidgen)
+          echo "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KC_PW" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$KC_PW" "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          echo "SIGN_IDENTITY=$MACOS_SIGN_IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Build universal app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+          UNIVERSAL: "1"
+          ZIP: "1"
+        run: ./build.sh
+
+      - name: Notarize
+        if: env.SIGN_IDENTITY != '' && env.APPLE_ID != ''
+        run: |
+          xcrun notarytool submit build/MacAwake.zip \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple build/MacAwake.app
+          rm build/MacAwake.zip
+          ditto -c -k --keepParent build/MacAwake.app build/MacAwake.zip
+
+      - name: Checksum
+        run: shasum -a 256 build/MacAwake.zip | tee build/MacAwake.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MacAwake-${{ steps.version.outputs.version }}
+          path: build/MacAwake.zip
+
+      - name: Publish release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -n "${SIGN_IDENTITY:-}" ]; then signed="Developer ID signed and notarized."; else
+            signed="Ad-hoc signed: the first time, open it from System Settings › Privacy & Security › Open Anyway."; fi
+          gh release create "v${VERSION}" build/MacAwake.zip build/MacAwake.zip.sha256 \
+            --title "MacAwake ${VERSION}" \
+            --notes "Built from ${GITHUB_SHA::7}. Universal (Apple silicon + Intel), macOS 14 or later. ${signed}" \
+            --target "$GITHUB_SHA" --latest
