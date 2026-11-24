@@ -32,10 +32,14 @@ The build must finish with no errors. Then check what you changed:
   Once the helper is installed, check `pmset -g sched | grep MacAwake` and `/var/log/macawake-wake.log`.
 - Note anything you could not check (for example, a real sleep/wake cycle) in the change note.
 
-## 4. Update the README
+## 4. Update the README and the technical guide
 
-If the change affects what a user sees or does, update `README.md` in the same change. That covers menu items, settings, install steps, permissions, limits and files on disk.
-The README describes how the app works now. It isn't a changelog.
+Documentation is split by audience. Update whichever your change affects, in the same change:
+
+- **`README.md`**: for people who just use the app, many of them not technical. It covers what the app does, why it exists, how to install it and how to use it. Use plain language: no code, file paths, commands or internals. Keep it short and describe how things are now; it isn't a changelog.
+- **`TECHNICAL.md`**: everything else. How it works internally, the wake helper, the settings reference with defaults, building, releases and signing, how to check it's working, troubleshooting commands and the project layout.
+
+If you're unsure where something goes, put the plain-language version in the README and the details in `TECHNICAL.md`, and link from one to the other.
 
 ## 5. Write a change note in `docs/`
 
