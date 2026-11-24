@@ -51,7 +51,7 @@ An event added less time before it starts than this interval might be missed. Fo
 
 - Wake from sleep only works in **Calendar** mode.
 - Checking for new events works best when your Mac is plugged in. On battery, macOS may end the check before your calendar has synced.
-- **Closing a MacBook's lid** puts it to sleep as usual, unless you turn on **Keep awake with lid closed** in [Settings](settings.md). Don't put a Mac that's awake with its lid closed in a bag: it can overheat.
+- **Closing a MacBook's lid** puts it to sleep as usual, unless you turn on [Keep awake with lid closed](lid-closed.md). Don't put a Mac that's awake with its lid closed in a bag: it can overheat.
 - **Quitting MacAwake** cancels any planned wake-up.
 - To remove the helper, click the **⋯** button at the bottom of the panel and choose **Remove Wake Helper…**.
 

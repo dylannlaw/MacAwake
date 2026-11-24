@@ -35,7 +35,19 @@ shot timer    timer.png    NO
 shot always   always.png   NO
 shot off      off.png      NO
 shot calendar settings.png YES
+shot run      run.png      NO   # a `macawake run` hold, with the mode Off
+shot battery  battery.png  NO   # paused for a low battery
 
-# Details for the Wake from sleep page, cut from the Settings screenshot.
-crop settings.png wake-header.png 140 1     # header with the "Wakes Mac at" line
-crop settings.png wake.png        120 1059  # "Wake Mac from sleep" and "Check for new events"
+# Details cut from the Settings screenshot.
+crop settings.png wake-header.png      140 1     # header with the "Wakes Mac at" line
+crop settings.png wake.png             110 1232  # "Wake Mac from sleep" and "Check for new events"
+crop settings.png battery-settings.png 150 1005  # "Stop below", "Only when plugged in", "Pause in Low Power Mode"
+
+# Watched apps and lid closed: full panels with Settings open, cut into details, then removed.
+shot apps apps-full.png YES
+crop apps-full.png apps-header.png 140 1         # "Awake for an app · While claude is working"
+crop apps-full.png apps.png        222 1082      # the watched list: claude (busy), codex, xcodebuild
+shot lid  lid-full.png  YES
+crop lid-full.png  lid.png         165 1         # header with "Lid can be closed"
+crop lid-full.png  lid-setting.png  95 1368      # "Keep awake with lid closed" switched on
+rm -f "$OUT/apps-full.png" "$OUT/lid-full.png"
