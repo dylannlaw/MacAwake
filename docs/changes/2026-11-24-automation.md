@@ -49,7 +49,7 @@ This is gap #4 in the competitor gap analysis: Lungo, Amphetamine and KeepingYou
 ## Follow-ups
 
 - Native Shortcuts actions, if the build moves to Xcode (or `build.sh` learns to run `appintentsmetadataprocessor`).
-- Merge with gap #3 (process trigger): both add a "stay awake while a process runs" condition to `refresh()`. Fold both into one additive condition and one status wording.
+- Gap #3 ([Stay awake while apps are working](2026-11-24-process-trigger.md)) merged first. In the merge, its watched-app result feeds `modeAwake` (Calendar mode only), and holds are added on top of that (any mode). Only an active event calls `declareUserActivity`, so neither a watched app nor a hold turns the screen on during a dark wake. The two still use separate process code (`ProcessWatcher` and `ProcessHolds`), which could share a liveness helper later.
 - Gap #2 (battery safeguards) should veto holds as well as modes. That should happen automatically if it gates `shouldBeAwake` after this change's `||`.
 - `macawake status` could show holds, if the app published them (for example to a file in Application Support).
 - An optional `display=on|off` parameter per session.
