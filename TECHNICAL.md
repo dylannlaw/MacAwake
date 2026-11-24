@@ -34,7 +34,7 @@ How MacAwake works under the hood, plus how to build, release and troubleshoot i
   - All-day events count only if you turn that on.
   - You can choose to skip events marked Free.
   - If events overlap, the Mac stays awake until the last one ends.
-- **Timer:** the end time, start time and the mode to return to are saved, so a running timer survives a relaunch.
+- **Timer:** the end time and start time are saved, so a running timer survives a relaunch. When it runs out (also checked on wake and relaunch) or is stopped, the mode switches to Off. While a timer runs, no event wake is scheduled.
 - **Settings** are stored in `UserDefaults` under the bundle ID `local.macawake.app`.
 
 ## Wake from sleep: the helper
