@@ -108,19 +108,55 @@ Don't run the bare binary from `swift run`. Without the Info.plist, macOS kills 
 
 Every push to `main` that changes the app runs [`.github/workflows/release.yml`](.github/workflows/release.yml) on `macos-15`. The workflow:
 
+- Checks `install.sh` with `bash -n`.
 - Builds a universal app and publishes a GitHub Release named `v<VERSION>.<run number>` (for example `v1.0.12`).
-- Attaches `MacAwake.zip` and `MacAwake.zip.sha256`.
+- Attaches `install.sh`, `MacAwake.zip` and `MacAwake.zip.sha256`.
 - Doesn't release for pull requests (they're only built) or for pushes that only change Markdown, `docs/` or the icon preview.
 
-The README's download link, `releases/latest/download/MacAwake.zip`, always points to the newest release. To change the major or minor version, edit `VERSION`.
+To change the major or minor version, edit `VERSION`.
 
-To check a download:
+### Installing with curl
+
+The README installs with:
+
+```bash
+curl -fsSL https://github.com/dylannlaw/MacAwake/releases/latest/download/install.sh | bash
+```
+
+`releases/latest/download/…` always points at the newest release, so the command never changes and also updates an existing install. [`install.sh`](install.sh):
+
+1. Checks it's macOS 14 or later.
+2. Downloads `MacAwake.zip` and `MacAwake.zip.sha256` from the same release over https only (redirects too) and checks the hash.
+3. Unzips with `ditto` and runs `codesign --verify --strict` on the app.
+4. Quits a running copy at the install path (matched by path, so other copies are left alone), replaces `/Applications/MacAwake.app` (using `sudo` only if the folder isn't writable), removes any quarantine flag and opens the app.
+
+Everything runs inside `main()`, called on the last line, so a download that's cut off runs nothing.
+
+**Why curl instead of a browser download:** browsers set `com.apple.quarantine` on downloads, and Gatekeeper then blocks an app that isn't Developer ID signed and notarized ("can't check for malicious software" → **Open Anyway**). `curl` doesn't set that flag and Gatekeeper only assesses quarantined files, so the ad-hoc signed app opens straight away without a paid Apple Developer account. The trade-off is that Apple's malware check is skipped; the checksum and signature check in `install.sh` confirm the download matches the release, but trust comes from the GitHub repository, not Apple. Anyone careful can read the script first:
+
+```bash
+curl -fsSL https://github.com/dylannlaw/MacAwake/releases/latest/download/install.sh
+```
+
+Settings for testing `install.sh` (environment variables):
+
+| Variable | Effect |
+|---|---|
+| `MACAWAKE_DOWNLOAD_BASE` | Where to fetch the zip and checksum from. Accepts `file://` for local tests. Default: the latest release. |
+| `MACAWAKE_INSTALL_DIR` | Install folder. Default: `/Applications`. |
+| `MACAWAKE_NO_OPEN=1` | Don't open the app afterwards. |
+
+The zip is still a release asset (the script needs it). Installing it by hand works too, but then the app is quarantined and needs **Open Anyway** once. To check a manual download:
 
 ```bash
 shasum -a 256 -c MacAwake.zip.sha256
 ```
 
-**Signing:** without secrets, releases are ad-hoc signed. Users then need **Open Anyway** the first time, and calendar permission can reset after updates. To sign with a Developer ID and notarize, add these repository secrets:
+The download URLs only work while the repository is public; a private repository's release assets return 404 to anonymous `curl`.
+
+### Signing
+
+Without secrets, releases are ad-hoc signed. Installed with curl, they open normally; the remaining cost is that calendar permission can reset after updates, because an ad-hoc signature changes with every build. To sign with a Developer ID and notarize, add these repository secrets:
 
 | Secret | Value |
 |---|---|
@@ -167,7 +203,7 @@ open /Applications/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png
   tccutil reset Calendar local.macawake.app
   ```
 
-- **"Can't be opened" or "can't check for malicious software".** The release isn't Developer ID signed. Go to **System Settings › Privacy & Security** and click **Open Anyway**. Or remove the quarantine flag:
+- **"Can't be opened" or "can't check for malicious software".** The app was downloaded in a browser, so it's quarantined, and the release isn't Developer ID signed. Reinstall with the curl command, or go to **System Settings › Privacy & Security** and click **Open Anyway**, or remove the quarantine flag:
 
   ```bash
   xattr -dr com.apple.quarantine /Applications/MacAwake.app
@@ -189,9 +225,10 @@ open /Applications/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png
 | `Resources/AppIcon.icns`, `Branding/` | App icon and the script that draws it |
 | `MacAwake.entitlements` | Calendar entitlement for hardened-runtime signing |
 | `Info.plist`, `VERSION`, `build.sh`, `Package.swift` | Packaging and build |
+| `install.sh` | The curl installer, published with each release |
 | `.github/workflows/release.yml` | Builds pull requests; builds and releases pushes to `main` |
 | `AGENTS.md` | Workflow for anyone (human or AI) changing the project |
-| `docs/` | Change history and design notes (kept locally; excluded by `.gitignore`) |
+| `docs/` | Change history and design notes |
 
 ## Contributing
 
