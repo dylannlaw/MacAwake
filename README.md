@@ -4,8 +4,16 @@
 
 <p align="center">
   Keep your Mac awake when you need it, and only then.<br>
-  <a href="https://github.com/dylannlaw/MacAwake/releases/latest/download/MacAwake.zip"><b>⬇︎ Download MacAwake</b></a>
+  <a href="#get-started"><b>⬇︎ Install MacAwake</b></a>
   · Free · Works on any Mac with macOS 14 or later
+</p>
+
+<p align="center">
+  <a href="https://github.com/dylannlaw/MacAwake/releases/latest"><img src="https://img.shields.io/github/downloads/dylannlaw/MacAwake/total?color=666666&labelColor=444444" alt="Downloads"></a>
+  <a href="https://github.com/dylannlaw/MacAwake/releases/latest"><img src="https://img.shields.io/github/v/release/dylannlaw/MacAwake?color=666666&labelColor=444444" alt="Latest release"></a>
+  <a href="https://github.com/dylannlaw/MacAwake"><img src="https://img.shields.io/github/stars/dylannlaw/MacAwake?style=social" alt="Stars"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-666666?labelColor=444444" alt="macOS 14+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-666666?labelColor=444444" alt="MIT license"></a>
 </p>
 
 <p align="center">
@@ -19,6 +27,7 @@
 - [Get started](#get-started)
 - [Using MacAwake](#using-macawake)
 - [Good to know](#good-to-know)
+- [Contributing](#contributing)
 - [Technical details](#technical-details)
 
 ## Why MacAwake?
@@ -41,10 +50,17 @@ Most keep-awake apps only give you an on/off switch. You either have to remember
 
 ## Get started
 
-1. **[Download MacAwake](https://github.com/dylannlaw/MacAwake/releases/latest/download/MacAwake.zip)** and open the downloaded file to unzip it.
-2. Drag **MacAwake** into your **Applications** folder, then open it.
-3. If your Mac says it can't check the app, open **System Settings › Privacy & Security**, scroll down and click **Open Anyway**. You only need to do this once.
-4. When asked, allow MacAwake to see your calendars.
+1. Open **Terminal** (press ⌘ Space, type "Terminal" and press Return).
+2. Copy this line, paste it into Terminal and press Return:
+
+   ```
+   curl -fsSL https://github.com/dylannlaw/MacAwake/releases/latest/download/install.sh | bash
+   ```
+
+   It downloads the newest MacAwake, checks that the download is complete and unchanged, puts it in your **Applications** folder and opens it. If it asks for a password, type your Mac password (nothing shows as you type) and press Return.
+3. When asked, allow MacAwake to see your calendars.
+
+Installing this way means your Mac doesn't block the app, so there's no trip to System Settings to allow it.
 
 MacAwake now lives in the menu bar at the top of your screen; look for the coffee cup ☕. It doesn't appear in the Dock.
 
@@ -81,7 +97,7 @@ Click the coffee cup in the menu bar to open the panel.
 - Skip events you've marked as "Free"
 - Choose which calendars count
 - Set up **Wake from sleep**. Click **Set Up…** and enter your Mac password once.
-- Choose how often a sleeping Mac checks for new events (**Check for new events**: every 15 minutes, 30 minutes, hour, or never)
+- Choose how often a sleeping Mac checks for new events (**Check for new events**: every 5, 15 or 30 minutes, every hour, or never). More often catches last-minute events but uses more battery.
 
 **The menu bar icon** tells you the state at a glance:
 - ☕ filled: keeping your Mac awake
@@ -96,7 +112,11 @@ Click the coffee cup in the menu bar to open the panel.
 - **Closing a MacBook's lid** still puts it to sleep, unless it's connected to power and an external display.
 - **New events while your Mac sleeps:** if you add an event from your phone while the Mac is asleep, MacAwake still catches it. Every 15 minutes (you can change this), it briefly wakes the Mac in the background with the screen off, checks your calendar, and goes back to sleep. So an event added less than 15 minutes before it starts might be missed. Checking works best when the Mac is plugged in; on battery, macOS may stop the check before your calendar has synced.
 - **Quitting MacAwake** lets your Mac sleep normally again and cancels any planned wake-up.
-- **Updating:** download the new version and replace the app in Applications. If your events stop showing, allow calendar access again.
+- **Updating:** paste the same line into Terminal again. It replaces the old version and keeps your settings. If your events stop showing afterwards, allow calendar access again.
+
+## Contributing
+
+Ideas and fixes are welcome. See **[Contributing](CONTRIBUTING.md)** for how to suggest a change. If you find a security problem, please report it privately as described in **[Security](SECURITY.md)**.
 
 ## Technical details
 
