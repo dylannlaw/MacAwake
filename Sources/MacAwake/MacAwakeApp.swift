@@ -104,8 +104,22 @@ private struct StatusHeader: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if let lid = controller.lidLine {
+                    Label(lid, systemImage: lidSymbol)
+                        .font(.caption)
+                        .foregroundStyle(controller.lidStatus == .active || controller.lidStatus == .starting
+                                         ? AnyShapeStyle(.secondary) : AnyShapeStyle(.orange))
+                }
             }
             Spacer(minLength: 0)
+        }
+    }
+
+    private var lidSymbol: String {
+        switch controller.lidStatus {
+        case .pausedBattery: return "battery.25"
+        case .pausedHot: return "thermometer.high"
+        default: return "laptopcomputer"
         }
     }
 
@@ -465,6 +479,10 @@ private struct SettingsSection: View {
                         Text(err).font(.caption).foregroundStyle(.red)
                     }
 
+                    if controller.hasBattery {
+                        LidSetting(controller: controller)
+                    }
+
                     if controller.hasAccess && !controller.calendars.isEmpty {
                         DisclosureGroup {
                             ScrollView {
@@ -492,6 +510,38 @@ private struct SettingsSection: View {
                 .transition(.opacity)
             }
         }
+    }
+}
+
+/// "Keep awake with lid closed": a toggle once the helper is installed, otherwise a Set Up button.
+private struct LidSetting: View {
+    @ObservedObject var controller: AwakeController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if controller.lidHelperInstalled {
+                SettingToggle("Keep awake with lid closed", "laptopcomputer", Binding(
+                    get: { controller.lidClosedAwake },
+                    set: { controller.setLidClosedAwake($0) }
+                ))
+            } else {
+                HStack {
+                    Label("Keep awake with lid closed", systemImage: "laptopcomputer").font(.callout)
+                    Spacer()
+                    Button("Set Up…") { controller.setUpLidClosed() }
+                        .controlSize(.small)
+                        .disabled(controller.lidHelperBusy)
+                }
+            }
+            Text("Works on battery. Don't put your Mac in a bag or sleeve while this is on: it can overheat.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let err = controller.lidHelperError {
+                Text(err).font(.caption).foregroundStyle(.red)
+            }
+        }
+        .help("While MacAwake is keeping your Mac awake, closing the lid won't put it to sleep. Pauses at \(lidBatteryFloor)% battery or if the Mac gets too hot.")
     }
 }
 
@@ -644,10 +694,21 @@ private struct Footer: View {
                 .toggleStyle(.checkbox)
                 .font(.caption)
             Spacer()
-            if controller.wakeHelperInstalled {
+            if controller.wakeHelperInstalled || controller.lidHelperInstalled {
                 Menu {
-                    Button("Remove Wake Helper…") { controller.uninstallWakeHelper() }
-                        .disabled(controller.wakeHelperBusy)
+                    if controller.helpersNeedUpdate {
+                        Button("Update Helpers…") { controller.updateHelpers() }
+                            .disabled(controller.wakeHelperBusy || controller.lidHelperBusy)
+                        Divider()
+                    }
+                    if controller.wakeHelperInstalled {
+                        Button("Remove Wake Helper…") { controller.uninstallWakeHelper() }
+                            .disabled(controller.wakeHelperBusy)
+                    }
+                    if controller.lidHelperInstalled {
+                        Button("Remove Lid-Closed Helper…") { controller.uninstallLidHelper() }
+                            .disabled(controller.lidHelperBusy)
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }

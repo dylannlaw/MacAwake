@@ -39,6 +39,7 @@ cp "$BIN_PATH" "$APP_DIR/Contents/MacOS/${APP_NAME}"
 cp Info.plist "$APP_DIR/Contents/Info.plist"
 cp Resources/AppIcon.icns "$APP_DIR/Contents/Resources/AppIcon.icns"
 cp Helper/wake-helper.sh "$APP_DIR/Contents/Resources/wake-helper.sh"
+cp Helper/lid-helper.sh "$APP_DIR/Contents/Resources/lid-helper.sh"
 install -m 755 Helper/macawake-cli.sh "$APP_DIR/Contents/Resources/macawake"
 
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "$APP_DIR/Contents/Info.plist"

@@ -1,4 +1,5 @@
 #!/bin/sh
+# macawake-helper-version: 1
 # MacAwake wake helper. Runs as root from launchd whenever MacAwake updates its request file.
 #
 # The request file holds one thing: a Unix timestamp for the next wake, or nothing to clear it.
