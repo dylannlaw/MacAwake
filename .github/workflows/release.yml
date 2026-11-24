@@ -50,7 +50,14 @@ jobs:
           persist-credentials: false
 
       - name: Check install script
-        run: bash -n install.sh
+        run: |
+          bash -n install.sh
+          /bin/bash -n install.sh
+          # macOS's bash 3.2 reads non-ASCII bytes (like "…") after a bare $name as part of the name.
+          if LC_ALL=C grep -nE '\$[A-Za-z_][A-Za-z0-9_]*[^ -~]' install.sh; then
+            echo "::error file=install.sh::Use \${name} before non-ASCII characters (bash 3.2 compatibility)"
+            exit 1
+          fi
 
       - name: Work out version
         id: version

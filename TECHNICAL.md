@@ -229,6 +229,12 @@ curl -fsSL https://github.com/dylannlaw/MacAwake/releases/latest/download/instal
 
 Everything runs inside `main()`, called on the last line, so a download that's cut off runs nothing.
 
+The script must work with macOS's built-in `/bin/bash` (3.2) as well as newer bash (for example Homebrew's), because `| bash` runs whichever comes first in `PATH`. Bash 3.2 in a UTF-8 locale treats non-ASCII bytes right after a bare `$name` as part of the variable name, so write `${name}…`, never `$name…`. The release workflow checks for this. Test changes with both:
+
+```bash
+cat install.sh | LC_ALL=en_US.UTF-8 MACAWAKE_DOWNLOAD_BASE=file:///path/to/assets MACAWAKE_INSTALL_DIR=/tmp/macawake-test MACAWAKE_NO_OPEN=1 /bin/bash
+```
+
 **Why curl instead of a browser download:** browsers set `com.apple.quarantine` on downloads, and Gatekeeper then blocks an app that isn't Developer ID signed and notarized ("can't check for malicious software" → **Open Anyway**). `curl` doesn't set that flag and Gatekeeper only assesses quarantined files, so the ad-hoc signed app opens straight away without a paid Apple Developer account. The trade-off is that Apple's malware check is skipped; the checksum and signature check in `install.sh` confirm the download matches the release, but trust comes from the GitHub repository, not Apple. Anyone careful can read the script first:
 
 ```bash
