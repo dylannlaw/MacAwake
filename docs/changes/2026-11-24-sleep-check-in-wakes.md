@@ -2,7 +2,7 @@
 
 ## Summary
 
-While the Mac sleeps, MacAwake now also schedules short background "check-in" wakes, every 15 minutes by default. At each one it syncs the calendar and, if a new event has shown up, schedules a wake for it (or stays awake if the event has already started). A new setting, **Check for new events** (Never / 15 / 30 / 60 min), controls this.
+While the Mac sleeps, MacAwake now also schedules short background "check-in" wakes, every 15 minutes by default. At each one it syncs the calendar and, if a new event has shown up, schedules a wake for it (or stays awake if the event has already started). A new setting, **Check for new events** (Never / 5 / 15 / 30 / 60 min), controls this.
 
 ## Why
 
