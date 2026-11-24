@@ -78,6 +78,14 @@ Click a feature to read how it works and when to use it.
       <a href="docs/features/settings.md"><img src="docs/screenshots/settings.png" width="260" alt="The panel with Settings open"></a>
     </td>
   </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>⬇️ <a href="docs/features/updates.md">Update with one click</a></h3>
+      When a new version is out, the panel tells you. Click <b>Update</b> and MacAwake installs it and restarts, with no Terminal and no security prompts.<br><br>
+      <a href="docs/features/updates.md"><img src="docs/screenshots/update.png" width="260" alt="A card in the panel: 'MacAwake 1.0.53 is out', with Later and Update buttons"></a>
+    </td>
+    <td width="50%" valign="top"></td>
+  </tr>
 </table>
 
 🤖 **Stay awake while your apps are working.** Pick the apps or tools to watch, such as an AI coding agent. Your Mac stays awake while they're busy and sleeps a few minutes after they finish. Set it up in **Settings** (Calendar mode).
@@ -111,6 +119,7 @@ Click the coffee cup in the menu bar to open the panel.
 - **At the top**, you'll see what MacAwake is doing right now. For example: "Awake for an event · until 3:00 PM", or how long the timer has left.
 - **Choose a mode** by clicking one of the four tiles: [Calendar](docs/features/calendar.md), [Always](docs/features/always-on.md), [Timer](docs/features/timer.md) or [Off](docs/features/off.md).
 - **Coming up** lists your next few events. The one keeping your Mac awake right now is marked **Now**.
+- **When a new version is out**, a card above Settings offers to [update](docs/features/updates.md) with one click.
 - **Settings** (click to open) holds the options for calendar events, watched apps and [waking from sleep](docs/features/wake-from-sleep.md). To watch an app, click **Add** under **Stay awake while apps are working** and pick an AI agent (like Claude Code or Codex), one of your open apps, or a command by name; choose **While working** or **While open**, and how long to stay awake after it finishes. On a MacBook, you can protect your battery there (stop below a charge level, 10% to start with; keep awake **Only when plugged in**; or **Pause in Low Power Mode**), and turn on **Keep awake with lid closed** (click **Set Up…** and enter your Mac password once). Every option is explained in [Settings and the menu bar](docs/features/settings.md).
 
 **The menu bar icon** tells you the state at a glance:
@@ -137,7 +146,7 @@ The full list of links and commands, and how to set up the command, are in the [
 - **Don't put your Mac in a bag or sleeve** while it's awake with the lid closed: it can overheat. MacAwake pauses lid-closed mode if the Mac gets too hot, or if the battery drops to 20% (it starts again above 25% or when you plug in). While it's on, choosing **Sleep** from the Apple menu won't put the Mac to sleep.
 - **New events while your Mac sleeps:** if you add an event from your phone while the Mac is asleep, MacAwake still catches it by briefly checking your calendar every 15 minutes (you can change this). An event added less than 15 minutes before it starts might be missed. See [Wake from sleep](docs/features/wake-from-sleep.md#catching-events-added-while-your-mac-sleeps).
 - **Quitting MacAwake** lets your Mac sleep normally again and cancels any planned wake-up.
-- **Updating:** paste the same line into Terminal again. It replaces the old version and keeps your settings. If your events stop showing afterwards, allow calendar access again.
+- **Updating:** when a new version is out, the panel shows it; click **Update** and MacAwake installs it and restarts, keeping your settings. You can also check from the **⋯** menu, or paste the install line into Terminal again. If your events stop showing afterwards, allow calendar access again. See [Updates](docs/features/updates.md).
 
 ## Contributing
 

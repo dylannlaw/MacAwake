@@ -10,6 +10,7 @@ Design notes and change history. Read these before you change the project (see [
 
 ## Change notes (newest first)
 
+- [2026-11-24 · In-app updates](changes/2026-11-24-in-app-updates.md): the panel shows when a new version is out and installs it with one click (checksum and signature checked, no Open Anyway step); **Check for updates** setting and **⋯ › Check for Updates…**.
 - [2026-11-24 · Battery safeguards](changes/2026-11-24-battery-safeguards.md): on battery, pauses keeping awake below a charge limit (default 10%), and optionally when unplugged or in Low Power Mode.
 - [2026-11-24 · Feature pages linked from the README](changes/2026-11-24-feature-pages.md): a plain-language page with screenshots for each feature in `docs/features/`, a feature table in the README, and `scripts/screenshots.sh` to retake every screenshot.
 - [2026-11-24 · Closed-lid keep-awake](changes/2026-11-24-closed-lid.md): optional keep-awake with the lid closed, even on battery, through a lease-based root helper with battery and heat cut-offs.

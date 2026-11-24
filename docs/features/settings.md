@@ -5,7 +5,7 @@
 Everything in MacAwake lives in one panel. Click the coffee cup ☕ in the menu bar to open it, and click **Settings** to see the options.
 
 <p align="center">
-  <img src="../screenshots/settings.png" width="300" alt="The panel with Settings open, showing Keep display on, Count all-day events, Ignore events marked Free, Wake before, Stay awake after, Stay awake while apps are working, Wake Mac from sleep for events, Check for new events, Keep awake with lid closed and Calendars, with Launch at Login at the bottom.">
+  <img src="../screenshots/settings.png" width="300" alt="The panel with Settings open, showing Keep display on, Count all-day events, Ignore events marked Free, Wake before, Stay awake after, Stay awake while apps are working, Wake Mac from sleep for events, Check for new events, Keep awake with lid closed, Check for updates and Calendars, with Launch at Login at the bottom.">
 </p>
 
 ## All settings
@@ -24,6 +24,7 @@ Everything in MacAwake lives in one panel. Click the coffee cup ☕ in the menu 
 | **Only when plugged in** | MacBooks only. Keeps your Mac awake only while it's on the power adapter. | Off |
 | **Pause in Low Power Mode** | MacBooks only. Pauses keeping awake while Low Power Mode is on and the Mac is on battery. | Off |
 | **Keep awake with lid closed** | MacBooks only. Lets your Mac keep running with the lid closed, even on battery, while MacAwake is keeping it awake. Needs a one-time **Set Up…** with your Mac password. Pauses if the Mac gets too hot or the battery drops to 20%. Don't put the Mac in a bag while it's on. | Off |
+| **Check for updates** | Checks for a newer MacAwake when it starts and once a day, and shows a card in the panel when there is one. You choose when to install it. See [Updates](updates.md). | On |
 | **Calendars** | Click to choose which calendars count. | All |
 
 The calendar settings only matter in [Calendar mode](calendar.md). **Keep display on** applies whenever MacAwake is keeping your Mac awake.
@@ -31,7 +32,7 @@ The calendar settings only matter in [Calendar mode](calendar.md). **Keep displa
 ## At the bottom of the panel
 
 - **Launch at Login:** start MacAwake every time you turn on your Mac. Recommended.
-- **⋯:** appears once Wake from sleep or lid-closed keep-awake is set up, with options to remove their helpers.
+- **⋯:** shows which version you have and **Check for Updates…**. Once Wake from sleep or lid-closed keep-awake is set up, it also has options to remove their helpers.
 - **↻:** check your calendar again now.
 - **Quit:** close MacAwake. Your Mac sleeps normally again and any planned wake-up is cancelled.
 
@@ -48,5 +49,5 @@ The icon tells you what MacAwake is doing without opening the panel:
 
 ## Related
 
-- [Calendar mode](calendar.md) · [Timer](timer.md) · [Always on](always-on.md) · [Off](off.md) · [Wake from sleep](wake-from-sleep.md)
+- [Calendar mode](calendar.md) · [Timer](timer.md) · [Always on](always-on.md) · [Off](off.md) · [Wake from sleep](wake-from-sleep.md) · [Updates](updates.md)
 - The [Technical guide](../../TECHNICAL.md) lists the same settings with their internal names.

@@ -10,10 +10,10 @@ OUT=docs/screenshots
 [ -x "$B" ] || { echo "Build the app first: ./build.sh" >&2; exit 1; }
 mkdir -p "$OUT"
 
-# shot <demo mode> <file> <settings open: YES|NO>
+# shot <demo mode> <file> <settings open: YES|NO> [extra preview arguments…]
 shot() {
     rm -f "$OUT/$2"
-    "$B" --preview-panel --demo "$1" --snapshot "$OUT/$2" -panel.showSettings "$3" &
+    "$B" --preview-panel --demo "$1" --snapshot "$OUT/$2" -panel.showSettings "$3" "${@:4}" &
     local pid=$!
     for _ in $(seq 1 30); do [ -s "$OUT/$2" ] && break; sleep 0.5; done
     sleep 0.5
@@ -35,7 +35,12 @@ shot timer    timer.png    NO
 shot always   always.png   NO
 shot off      off.png      NO
 shot calendar settings.png YES
+shot calendar update-panel.png NO --preview-update 1.0.53
 
 # Details for the Wake from sleep page, cut from the Settings screenshot.
 crop settings.png wake-header.png 140 1     # header with the "Wakes Mac at" line
 crop settings.png wake.png        120 1059  # "Wake Mac from sleep" and "Check for new events"
+
+# Detail for the Updates page: the "is out" card, cut from the panel, then the full panel isn't kept.
+crop update-panel.png update.png  200 690
+rm "$OUT/update-panel.png"

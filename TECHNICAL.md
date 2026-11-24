@@ -10,6 +10,7 @@ How MacAwake works under the hood, plus how to build, release and troubleshoot i
 - [Automation: URLs and the `macawake` command](#automation-urls-and-the-macawake-command)
 - [Build from source](#build-from-source)
 - [Releases and signing](#releases-and-signing)
+- [Updates](#updates)
 - [Check that it's working](#check-that-its-working)
 - [Troubleshooting](#troubleshooting)
 - [Project layout](#project-layout)
@@ -129,6 +130,7 @@ The panel's status area shows "Lid can be closed" or the reason it's paused. The
 | Stay awake while apps are working | Off | `watchAppsEnabled`. Calendar mode also follows watched items. |
 | Watched apps | None | `watchedItems`: JSON array of `{kind: app\|command, id, name, rule: working\|running}`. **Add › AI agents** adds `claude`, `codex`, `gemini`, `aider`, `cursor-agent`, `opencode`. |
 | Keep awake after (watched apps) | 5 min | `watchGraceMinutes`: 1, 2, 5, 10 or 15. |
+| Check for updates | On | `checkForUpdates`. Asks GitHub for the latest release at launch and every 24 h (a failed check retries after an hour). Off: only **⋯ › Check for Updates…** checks. `dismissedUpdateVersion` holds the version hidden with **Later**. |
 | Launch at Login | Off | Registers the app with `SMAppService`. Works best from /Applications. |
 
 ## Automation: URLs and the `macawake` command
@@ -229,7 +231,7 @@ The README installs with:
 curl -fsSL https://github.com/dylannlaw/MacAwake/releases/latest/download/install.sh | bash
 ```
 
-`releases/latest/download/…` always points at the newest release, so the command never changes and also updates an existing install. [`install.sh`](install.sh):
+`releases/latest/download/…` always points at the newest release, so the command never changes and also updates an existing install. The app's own [update button](#updates) follows the same steps. [`install.sh`](install.sh):
 
 1. Checks it's macOS 14 or later.
 2. Downloads `MacAwake.zip` and `MacAwake.zip.sha256` from the same release over https only (redirects too) and checks the hash.
@@ -276,6 +278,33 @@ Without secrets, releases are ad-hoc signed. Installed with curl, they open norm
 | `MACOS_CERT_PASSWORD` | password of the .p12 |
 | `MACOS_SIGN_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` |
 | `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` | for `notarytool` (use an app-specific password) |
+
+## Updates
+
+The panel offers new releases and installs them in place. [`Updater.swift`](Sources/MacAwake/Updater.swift) does what `install.sh` does, from inside the app.
+
+**Checking.** `refresh()` calls `checkForUpdatesIfDue`, so there's no extra timer: one check after launch, then one every 24 hours, while **Check for updates** is on. It's a `GET https://api.github.com/repos/dylannlaw/MacAwake/releases/latest` with only a `MacAwake/<version>` user agent. The tag (`v1.0.N`) is compared with `CFBundleShortVersionString` part by part as numbers. Drafts, pre-releases and tags that aren't versions are ignored. Local builds (`1.0-dev`) don't check by themselves; **Check for Updates…** still works. `--preview-panel` copies never check or install.
+
+**Installing** (after **Update**):
+
+1. Downloads `MacAwake.zip` and `MacAwake.zip.sha256`. Only `https://github.com/dylannlaw/MacAwake/releases/download/…` URLs are accepted, and redirects must stay on https.
+2. Checks the SHA-256, unzips with `ditto`, runs `codesign --verify --strict`, and checks that the bundle ID matches and the version is the one the release named.
+3. Swaps the app with a small `sh` script: moves the old bundle aside, copies the new one in, clears `com.apple.quarantine`, then deletes the old one. If the copy fails, the old bundle is put back. If the app's folder isn't writable, the script runs through the admin password dialog (`AdminShell`).
+4. Starts a tiny `sh` that waits for this process to exit and `open`s the app, then quits.
+
+**Why no Open Anyway prompt.** Gatekeeper only stops apps with a quarantine flag. Browsers add one to downloads; `curl` and a non-sandboxed app's `URLSession` don't, unless the app sets `LSFileQuarantineEnabled`. MacAwake does neither, and the swap clears the flag anyway. As with `install.sh`, the checksum comes from the same release, so trust rests on GitHub and https. Calendar permission can still reset after an update of an ad-hoc signed build.
+
+**Testing without a release.** `MACAWAKE_UPDATE_FEED=<url>` reads a release JSON from there instead of the GitHub API and then also allows `file://` downloads. `--self-test-update <dest.app>` runs the version and URL checks, and with the feed set also the full check, download, verification and swap into `<dest.app>` (never the running app, no relaunch):
+
+```bash
+VERSION=1.0.99 ZIP=1 ./build.sh && cp build/MacAwake.zip /tmp/feed/ && (cd /tmp/feed && shasum -a 256 MacAwake.zip > MacAwake.zip.sha256)
+# /tmp/feed/release.json: {"tag_name":"v1.0.99","assets":[{"name":"MacAwake.zip","browser_download_url":"file:///tmp/feed/MacAwake.zip"},
+#                          {"name":"MacAwake.zip.sha256","browser_download_url":"file:///tmp/feed/MacAwake.zip.sha256"}]}
+VERSION=1.0.5 ./build.sh && cp -R build/MacAwake.app /tmp/target.app
+MACAWAKE_UPDATE_FEED=file:///tmp/feed/release.json build/MacAwake.app/Contents/MacOS/MacAwake --self-test-update /tmp/target.app
+```
+
+`--preview-panel --demo calendar --preview-update 1.0.53` shows the update card with no network, for screenshots.
 
 ## Check that it's working
 
@@ -393,6 +422,7 @@ open -n --env MACAWAKE_FAKE_POWER=battery:8 build/MacAwake.app --args --preview-
 | `Sources/MacAwake/SystemPower.swift` | Wake notifications from IOKit, including dark wakes |
 | `Sources/MacAwake/WakeScheduler.swift` | Writes wake requests; installs and removes the wake helper |
 | `Sources/MacAwake/LidScheduler.swift` | Lid lease, lid helper install and removal, battery reading |
+| `Sources/MacAwake/Updater.swift` | Update check, download, verification and in-place install; the update self-test |
 | `Sources/MacAwake/AdminShell.swift` | Admin-password prompt and helper version check, shared by both helpers |
 | `Helper/wake-helper.sh` | The root helper that schedules wakes with `pmset` |
 | `Helper/lid-helper.sh` | The root helper that switches `pmset disablesleep` while a lease is valid |
