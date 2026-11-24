@@ -15,6 +15,7 @@
 - [Get started](#get-started)
 - [Using MacAwake](#using-macawake)
 - [Good to know](#good-to-know)
+- [Contributing](#contributing)
 - [Technical details](#technical-details)
 
 ## Why MacAwake?
@@ -93,6 +94,10 @@ Click the coffee cup in the menu bar to open the panel.
 - **New events while your Mac sleeps:** if you add an event from your phone while the Mac is asleep, MacAwake still catches it. Every 15 minutes (you can change this), it briefly wakes the Mac in the background with the screen off, checks your calendar, and goes back to sleep. So an event added less than 15 minutes before it starts might be missed. Checking works best when the Mac is plugged in; on battery, macOS may stop the check before your calendar has synced.
 - **Quitting MacAwake** lets your Mac sleep normally again and cancels any planned wake-up.
 - **Updating:** paste the same line into Terminal again. It replaces the old version and keeps your settings. If your events stop showing afterwards, allow calendar access again.
+
+## Contributing
+
+Ideas and fixes are welcome. See **[Contributing](CONTRIBUTING.md)** for how to suggest a change. If you find a security problem, please report it privately as described in **[Security](SECURITY.md)**.
 
 ## Technical details
 
