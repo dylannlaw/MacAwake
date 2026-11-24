@@ -76,7 +76,8 @@ jobs:
           ditto -c -k --keepParent build/MacAwake.app build/MacAwake.zip
 
       - name: Checksum
-        run: shasum -a 256 build/MacAwake.zip | tee build/MacAwake.zip.sha256
+        # Run from build/ so the file lists just "MacAwake.zip" and `shasum -c` works after download.
+        run: cd build && shasum -a 256 MacAwake.zip | tee MacAwake.zip.sha256
 
       - uses: actions/upload-artifact@v4
         with:
