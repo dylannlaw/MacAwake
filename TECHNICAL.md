@@ -20,7 +20,7 @@ How MacAwake works under the hood, plus how to build, release and troubleshoot i
 - **When it checks:**
   - every 30 seconds
   - whenever the calendar changes
-  - when the Mac wakes or is about to sleep
+  - when the Mac wakes (including background "dark" wakes, via `IORegisterForSystemPower`) or is about to sleep
   - when a timer ends
 
   It opts out of App Nap, so macOS doesn't delay those checks.
@@ -48,12 +48,19 @@ A sleeping Mac runs no apps, so MacAwake schedules a hardware wake ahead of time
 3. The helper watches that folder (launchd `WatchPaths`). When the file changes, it cancels the wake it scheduled last time (tracked in `/var/db/local.macawake.lastwake`) and schedules the new one with owner `MacAwake`. It never touches wakes that other apps scheduled.
 4. On wake, the app tells macOS someone is using the Mac (`IOPMAssertionDeclareUserActivity`) so the display comes on, then keeps the Mac awake for the event.
 
+**Check-in wakes (events added while asleep)**
+- A sleeping Mac can't see new events, so the request is the earlier of the next event's wake and the next *check-in*. Check-ins fall on a fixed clock grid (every **Check for new events** minutes, e.g. :00/:15/:30/:45), at least 2 minutes ahead. The grid keeps the value the same between the 30-second refreshes, so the helper isn't rescheduling `pmset` all the time.
+- A scheduled wake is usually a dark wake (screen off). On any wake, the app takes a 60-second `NetworkClientActive` assertion (honoured in dark wake on AC power), calls `EKEventStore.refreshSourcesIfNecessary()`, refreshes straight away and again 40 seconds later. `EKEventStoreChanged` also refreshes when a sync arrives.
+- If an event is now active, the existing user-activity call turns the dark wake into a full one. Otherwise the next check-in (or the event's wake) is written and the Mac goes back to sleep.
+- The panel's "Wakes Mac at …" line shows only event wakes, not check-ins.
+
 **Details**
 - The wake is the start of the next event's window (event start minus **Wake before**), plus about 5 seconds.
 - The request is updated whenever the calendar changes, the settings change or the Mac is about to sleep. Quitting the app clears it.
 - **Security:** the helper reads at most 32 bytes, ignores symlinks, accepts only digits for a time up to 8 days ahead, and passes the value to `pmset` only after formatting it with `date -r`. Any other content means "no wake".
 - **Limits:**
-  - Events added while the Mac is asleep can't trigger a wake.
+  - Events added while the Mac is asleep are only seen at the next check-in, so one starting sooner than that can be missed. With check-ins set to Never, they're never seen.
+  - Whether the calendar syncs during a dark wake depends on macOS having network then (Power Nap / Wake for network access). On battery, macOS may end the dark wake before the sync.
   - A closed MacBook lid usually prevents a full wake unless the Mac is in clamshell mode.
   - Only the next event is scheduled; after each wake, the following one is scheduled.
 - **Removing it:** **⋯ › Remove Wake Helper…** in the panel footer unloads the daemon, deletes its files and cancels the scheduled wake.
@@ -68,6 +75,7 @@ A sleeping Mac runs no apps, so MacAwake schedules a hardware wake ahead of time
 | Wake before | 2 min | Starts keeping awake this long before an event. Also sets the wake time. |
 | Stay awake after | At end | Keeps awake this long after an event ends. |
 | Wake Mac from sleep for events | On | Schedules wakes. Shown once the helper is installed. |
+| Check for new events | Every 15 min | Check-in wakes while asleep (`sleepCheckMinutes`: 0, 15, 30, 60). 0 = never. Shown when wake is on. |
 | Calendars | All | Which calendars count. |
 | Launch at Login | Off | Registers the app with `SMAppService`. Works best from /Applications. |
 
@@ -166,7 +174,7 @@ open /Applications/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png
   ```
 
 - **The Mac still sleeps when the lid closes.** That's expected; `caffeinate` behaves the same way. Use clamshell mode (external power and display) to keep a closed MacBook awake.
-- **The Mac didn't wake for an event.** Check that the helper is set up and a wake is listed by `pmset -g sched`. Remember that events added while the Mac was asleep can't trigger a wake.
+- **The Mac didn't wake for an event.** Check that the helper is set up and a wake is listed by `pmset -g sched`. An event added while the Mac was asleep is only seen at the next check-in; `pmset -g log | grep -i macawake` shows whether check-in wakes happened.
 
 ## Project layout
 
@@ -175,6 +183,7 @@ open /Applications/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png
 | `Sources/MacAwake/MacAwakeApp.swift` | App entry point and the menu bar panel UI |
 | `Sources/MacAwake/AwakeController.swift` | Calendar logic, modes, timer, settings and state |
 | `Sources/MacAwake/SleepAssertion.swift` | Power assertions (the `caffeinate` part) |
+| `Sources/MacAwake/SystemPower.swift` | Wake notifications from IOKit, including dark wakes |
 | `Sources/MacAwake/WakeScheduler.swift` | Writes wake requests; installs and removes the helper |
 | `Helper/wake-helper.sh` | The root helper that calls `pmset` |
 | `Resources/AppIcon.icns`, `Branding/` | App icon and the script that draws it |

@@ -391,6 +391,19 @@ private struct SettingsSection: View {
 
                     if controller.wakeHelperInstalled {
                         SettingToggle("Wake Mac from sleep for events", "alarm", $controller.wakeForEvents)
+                        if controller.wakeForEvents {
+                            HStack {
+                                Label("Check for new events", systemImage: "arrow.clockwise").font(.callout)
+                                Spacer()
+                                Picker("", selection: $controller.sleepCheckMinutes) {
+                                    ForEach([0, 15, 30, 60], id: \.self) { m in
+                                        Text(m == 0 ? "Never" : (m == 60 ? "Every hour" : "Every \(m) min")).tag(m)
+                                    }
+                                }
+                                .labelsHidden().fixedSize()
+                            }
+                            .help("While the Mac sleeps, wake it briefly in the background (screen stays off) to look for events added since it went to sleep.")
+                        }
                     } else {
                         HStack {
                             Label("Wake from sleep", systemImage: "alarm").font(.callout)

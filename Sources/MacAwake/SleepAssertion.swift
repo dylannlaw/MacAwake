@@ -7,6 +7,7 @@ final class SleepAssertion {
     private var systemID: IOPMAssertionID = 0
     private var displayID: IOPMAssertionID = 0
     private var activityID: IOPMAssertionID = 0
+    private var checkInID: IOPMAssertionID = 0
     private var currentReason: String?
     private var displayOn = false
 
@@ -38,11 +39,27 @@ final class SleepAssertion {
         IOPMAssertionDeclareUserActivity(reason as CFString, kIOPMUserActiveLocal, &activityID)
     }
 
+    /// Keeps a dark wake going for up to `seconds`, so the calendar can sync before the Mac sleeps again.
+    /// `NetworkClientActive` is the public assertion macOS honours in a dark wake (on AC power; on battery
+    /// it may be ignored). It turns itself off after the timeout, so nothing needs to release it.
+    func holdForCheckIn(seconds: Int) {
+        if checkInID != 0 { IOPMAssertionRelease(checkInID); checkInID = 0 }
+        IOPMAssertionCreateWithDescription(kIOPMAssertNetworkClientActive as CFString,
+                                           "MacAwake: checking the calendar" as CFString,
+                                           nil, nil, nil,
+                                           CFTimeInterval(seconds),
+                                           kIOPMAssertionTimeoutActionRelease as CFString,
+                                           &checkInID)
+    }
+
     func disable() {
         if systemID != 0 { IOPMAssertionRelease(systemID); systemID = 0 }
         if displayID != 0 { IOPMAssertionRelease(displayID); displayID = 0 }
         currentReason = nil
     }
 
-    deinit { disable() }
+    deinit {
+        disable()
+        if checkInID != 0 { IOPMAssertionRelease(checkInID) }
+    }
 }
