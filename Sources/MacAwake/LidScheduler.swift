@@ -165,9 +165,13 @@ struct LidBattery {
               let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else {
             return LidBattery(hasBattery: false, onBattery: false, percent: nil)
         }
-        for source in list {
-            guard let d = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
-                  d[kIOPSTypeKey] as? String == kIOPSInternalBatteryType else { continue }
+        return parse(list.compactMap { IOPSGetPowerSourceDescription(info, $0)?.takeUnretainedValue() as? [String: Any] })
+    }
+
+    /// The internal battery among the power sources IOKit describes, if there is one.
+    static func parse(_ descriptions: [[String: Any]]) -> LidBattery {
+        for d in descriptions {
+            guard d[kIOPSTypeKey] as? String == kIOPSInternalBatteryType else { continue }
             let state = d[kIOPSPowerSourceStateKey] as? String
             var pct: Int?
             if let cur = d[kIOPSCurrentCapacityKey] as? Int, let max = d[kIOPSMaxCapacityKey] as? Int, max > 0 {
@@ -187,13 +191,16 @@ final class PowerSourceWatcher {
     init(onChange: @escaping () -> Void) {
         self.onChange = onChange
         let ctx = Unmanaged.passUnretained(self).toOpaque()
-        if let s = IOPSNotificationCreateRunLoopSource({ ctx in
-            guard let ctx else { return }
-            Unmanaged<PowerSourceWatcher>.fromOpaque(ctx).takeUnretainedValue().onChange()
-        }, ctx)?.takeRetainedValue() {
+        if let s = IOPSNotificationCreateRunLoopSource({ ctx in PowerSourceWatcher.deliver(ctx) }, ctx)?.takeRetainedValue() {
             CFRunLoopAddSource(CFRunLoopGetMain(), s, .commonModes)
             source = s
         }
+    }
+
+    /// Passes an IOKit callback on to the watcher it was registered for.
+    static func deliver(_ ctx: UnsafeMutableRawPointer?) {
+        guard let ctx else { return }
+        Unmanaged<PowerSourceWatcher>.fromOpaque(ctx).takeUnretainedValue().onChange()
     }
 
     deinit {

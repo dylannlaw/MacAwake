@@ -30,10 +30,7 @@ final class PowerSource {
     init(onChange: @escaping () -> Void) {
         self.onChange = onChange
         let context = Unmanaged.passUnretained(self).toOpaque()
-        if let src = IOPSNotificationCreateRunLoopSource({ context in
-            guard let context else { return }
-            Unmanaged<PowerSource>.fromOpaque(context).takeUnretainedValue().onChange()
-        }, context)?.takeRetainedValue() {
+        if let src = IOPSNotificationCreateRunLoopSource({ context in PowerSource.deliver(context) }, context)?.takeRetainedValue() {
             CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
             runLoopSource = src
         }
@@ -47,18 +44,29 @@ final class PowerSource {
         if let lpmObserver { NotificationCenter.default.removeObserver(lpmObserver) }
     }
 
+    /// Passes an IOKit callback on to the `PowerSource` it was registered for.
+    static func deliver(_ context: UnsafeMutableRawPointer?) {
+        guard let context else { return }
+        Unmanaged<PowerSource>.fromOpaque(context).takeUnretainedValue().onChange()
+    }
+
     func current() -> PowerState {
         if let fake { return fake }
-        var state = PowerState(lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled)
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return state }
-        if let providing = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? {
-            state.onBattery = providing != kIOPMACPowerKey
-        }
+        let lpm = ProcessInfo.processInfo.isLowPowerModeEnabled
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return PowerState(lowPowerMode: lpm) }
+        let providing = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String?
         let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] ?? []
+        let descriptions = list.compactMap { IOPSGetPowerSourceDescription(info, $0)?.takeUnretainedValue() as? [String: Any] }
+        return Self.state(providing: providing, descriptions: descriptions, lowPowerMode: lpm)
+    }
+
+    /// Builds the `PowerState` from what IOKit reports: the providing source and each source's description.
+    static func state(providing: String?, descriptions: [[String: Any]], lowPowerMode: Bool) -> PowerState {
+        var state = PowerState(lowPowerMode: lowPowerMode)
+        if let providing { state.onBattery = providing != kIOPMACPowerKey }
         var battery: Int?, ups: Int?
-        for ps in list {
-            guard let d = IOPSGetPowerSourceDescription(info, ps)?.takeUnretainedValue() as? [String: Any],
-                  d[kIOPSIsPresentKey] as? Bool ?? true else { continue }
+        for d in descriptions {
+            guard d[kIOPSIsPresentKey] as? Bool ?? true else { continue }
             let type = d[kIOPSTypeKey] as? String
             guard type == kIOPSInternalBatteryType || type == kIOPSUPSType else { continue }
             state.hasBattery = true

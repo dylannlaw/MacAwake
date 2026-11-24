@@ -65,7 +65,7 @@ struct Rig {
 @MainActor
 func makeRig(_ test: XCTestCase, calendar: Bool = true, seed: (UserDefaults) -> Void = { _ in },
              helperInstalled: Bool = false, lidInstalled: Bool = false, bundle: Bundle = .main,
-             observe: Bool = false) -> Rig {
+             observe: Bool = false, requestAccess: (() async throws -> Bool)? = nil) -> Rig {
     let dir = makeTempDir(test)
     let suite = "macawake-tests-\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
@@ -89,6 +89,7 @@ func makeRig(_ test: XCTestCase, calendar: Bool = true, seed: (UserDefaults) -> 
     hooks.confirmLid = { state.value.confirm }
     hooks.openURL = { state.value.opened.append($0) }
     hooks.observe = observe
+    hooks.requestAccess = requestAccess
     let c = AwakeController(defaults: defaults, waker: waker, lid: lid, hooks: hooks)
     return Rig(controller: c, defaults: defaults, waker: waker, lid: lid, dir: dir, state: state)
 }

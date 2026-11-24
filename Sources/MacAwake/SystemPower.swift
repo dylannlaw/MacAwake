@@ -20,9 +20,7 @@ final class SystemPower {
         self.onWake = onWake
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         rootPort = IORegisterForSystemPower(refcon, &notifyPort, { refcon, _, messageType, argument in
-            guard let refcon else { return }
-            Unmanaged<SystemPower>.fromOpaque(refcon).takeUnretainedValue()
-                .handle(messageType, argument)
+            SystemPower.deliver(refcon, messageType, argument)
         }, &notifier)
         if rootPort == 0 {
             NSLog("MacAwake: could not register for power notifications")
@@ -33,6 +31,12 @@ final class SystemPower {
                                IONotificationPortGetRunLoopSource(notifyPort).takeUnretainedValue(),
                                .commonModes)
         }
+    }
+
+    /// Passes an IOKit callback on to the `SystemPower` it was registered for.
+    static func deliver(_ refcon: UnsafeMutableRawPointer?, _ messageType: natural_t, _ argument: UnsafeMutableRawPointer?) {
+        guard let refcon else { return }
+        Unmanaged<SystemPower>.fromOpaque(refcon).takeUnretainedValue().handle(messageType, argument)
     }
 
     func handle(_ messageType: natural_t, _ argument: UnsafeMutableRawPointer?) {

@@ -712,6 +712,6 @@ final class AwakeControllerTests: XCTestCase {
         XCTAssertEqual(Demo.suite, "local.macawake.demo")
         XCTAssertEqual(Demo.choice, "calendar")
         XCTAssertEqual(Demo.watched.count, 3)
-        XCTAssertFalse(AwakeController.isDemo)
+        XCTAssertFalse(AwakeController.launchedAsDemo)
     }
 }
