@@ -175,10 +175,13 @@ final class ProcessWatcherTests: XCTestCase {
     func testLongNamesAreMatchedByPath() throws {
         let long = "a-very-long-executable-name"
         let path = copy(of: "/bin/sleep", as: long)
-        _ = spawn(self, path, ["60"])
-        Thread.sleep(forTimeInterval: 0.3)
+        let p = spawn(self, path, ["60"])
         let item = WatchedItem.command(long, rule: .running)
-        XCTAssertEqual(ProcessWatcher().active([item]), [item])
+        let w = ProcessWatcher()
+        // Give the process a moment to appear (slow CI runners).
+        for _ in 0..<50 where w.active([item]).isEmpty && p.isRunning { Thread.sleep(forTimeInterval: 0.1) }
+        try XCTSkipUnless(p.isRunning, "this system won't run a copied, re-signed program")
+        XCTAssertEqual(w.active([item]), [item])
     }
 
     func testChildrenCountTowardParent() throws {
