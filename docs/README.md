@@ -2,8 +2,13 @@
 
 Design notes and change history. Read these before you change the project (see [`../AGENTS.md`](../AGENTS.md)).
 
+## Plans
+
+- [Battery safeguards](plans/battery-safeguards.md): the implementation plan behind the battery-safeguards change.
+
 ## Change notes (newest first)
 
+- [2026-11-24 · Battery safeguards](changes/2026-11-24-battery-safeguards.md): on battery, pauses keeping awake below a charge limit (default 10%), and optionally when unplugged or in Low Power Mode.
 - [2026-11-24 · Check-in wakes for events added while asleep](changes/2026-11-24-sleep-check-in-wakes.md): while asleep, wakes briefly in the background every 15 min (configurable) to sync the calendar and schedule wakes for new events.
 - [2026-11-24 · Timer ends in Off](changes/2026-11-24-timer-ends-off.md): when a timer runs out or is stopped, the mode becomes Off instead of the previous mode.
 - [2026-11-24 · Split README for users, TECHNICAL.md for details](changes/2026-11-24-docs-split.md): a plain-language README, with technical content moved to its own guide.

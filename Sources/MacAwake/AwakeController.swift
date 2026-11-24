@@ -49,6 +49,10 @@ final class AwakeController: ObservableObject {
     @Published private(set) var wakeHelperBusy = false
     /// Shown in the panel when setting up or removing the helper didn't work.
     @Published private(set) var wakeHelperError: String?
+    /// How the Mac is powered, as of the last refresh.
+    @Published private(set) var powerState = PowerState()
+    /// Set while the mode wants the Mac awake but a battery safeguard stops it. Drives the "Paused" UI.
+    @Published private(set) var pauseReason: PauseReason?
 
     // MARK: - Settings (persisted in UserDefaults)
 
@@ -88,6 +92,22 @@ final class AwakeController: ObservableObject {
     @Published var sleepCheckMinutes: Int {
         didSet { defaults.set(sleepCheckMinutes, forKey: "sleepCheckMinutes"); refresh() }
     }
+    /// Stop keeping awake on battery below this charge (percent). 0 = never.
+    @Published var batteryStopPercent: Int {
+        didSet {
+            defaults.set(batteryStopPercent, forKey: "batteryStopPercent")
+            batteryLatched = false   // a changed limit is judged afresh, not by the old latch
+            refresh()
+        }
+    }
+    /// Keep awake only while on the power adapter.
+    @Published var onlyWhenPluggedIn: Bool {
+        didSet { defaults.set(onlyWhenPluggedIn, forKey: "onlyWhenPluggedIn"); refresh() }
+    }
+    /// Don't keep awake while Low Power Mode is on (on battery only).
+    @Published var pauseInLowPowerMode: Bool {
+        didSet { defaults.set(pauseInLowPowerMode, forKey: "pauseInLowPowerMode"); refresh() }
+    }
     @Published var excludedCalendarIDs: Set<String> {
         didSet { defaults.set(Array(excludedCalendarIDs), forKey: "excludedCalendarIDs"); refresh() }
     }
@@ -102,6 +122,12 @@ final class AwakeController: ObservableObject {
     private var expiryTimer: Timer?
     private var power: SystemPower?
     private var checkInTimer: Timer?
+    private var powerSource: PowerSource?
+    /// What the battery safeguards say right now, whatever the mode. nil = no objection.
+    private var safeguard: PauseReason?
+    /// On battery the charge only falls, so once it's under the limit stay paused until power is
+    /// connected, rather than flapping on noisy readings around the limit.
+    private var batteryLatched = false
     private var observers: [NSObjectProtocol] = []
     /// Opts out of App Nap, which could otherwise delay the 30 s check by minutes and start events late.
     /// Idle system sleep stays allowed; the power assertions decide that.
@@ -139,6 +165,9 @@ final class AwakeController: ObservableObject {
         excludedCalendarIDs = Set(defaults.stringArray(forKey: "excludedCalendarIDs") ?? [])
         wakeForEvents = defaults.object(forKey: "wakeForEvents") as? Bool ?? true
         sleepCheckMinutes = defaults.object(forKey: "sleepCheckMinutes") as? Int ?? 15
+        batteryStopPercent = defaults.object(forKey: "batteryStopPercent") as? Int ?? 10
+        onlyWhenPluggedIn = defaults.object(forKey: "onlyWhenPluggedIn") as? Bool ?? false
+        pauseInLowPowerMode = defaults.object(forKey: "pauseInLowPowerMode") as? Bool ?? false
         wakeHelperInstalled = waker.isHelperInstalled
 
         noNap = ProcessInfo.processInfo.beginActivity(
@@ -224,6 +253,11 @@ final class AwakeController: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         })
+
+        // Plugged in / unplugged, charge level, Low Power Mode.
+        powerSource = PowerSource { [weak self] in
+            Task { @MainActor in self?.refresh() }
+        }
 
         // Any wake, including the dark wakes our check-ins cause (which NSWorkspace doesn't report).
         power = SystemPower { [weak self] in
@@ -339,7 +373,13 @@ final class AwakeController: ObservableObject {
             reason = ""
         }
 
-        if shouldBeAwake {
+        // Battery safeguards veto keeping awake in every mode; the mode itself is left as it is.
+        powerState = powerSource?.current() ?? PowerState()
+        safeguard = evaluateSafeguards(powerState)
+        pauseReason = shouldBeAwake ? safeguard : nil
+        let holdAwake = shouldBeAwake && safeguard == nil
+
+        if holdAwake {
             // An event just started. If the Mac only half-woke for it (a scheduled "dark" wake),
             // count it as user activity so the display comes on and the Mac doesn't drop back to sleep.
             if !isAwake && mode == .auto { assertion.declareUserActivity(reason: reason) }
@@ -347,17 +387,48 @@ final class AwakeController: ObservableObject {
         } else {
             assertion.disable()
         }
-        isAwake = shouldBeAwake
+        isAwake = holdAwake
 
         // Schedule a hardware wake for the next event, in case the Mac is asleep by then.
         let installed = waker.isHelperInstalled
         if installed != wakeHelperInstalled { wakeHelperInstalled = installed }
         let wakes = mode == .auto && wakeForEvents && wakeHelperInstalled
         let wake = wakes ? upcoming.map { window(for: $0).start } : nil
-        // Also wake regularly to look for events added while asleep, if that comes sooner.
-        let checkIn = (wakes && hasAccess) ? nextCheckIn(after: now) : nil
+        // Also wake regularly to look for events added while asleep, if that comes sooner. Not while a
+        // battery safeguard blocks: each check-in costs charge and couldn't keep the Mac awake anyway.
+        let checkIn = (wakes && hasAccess && safeguard == nil) ? nextCheckIn(after: now) : nil
         waker.request([wake, checkIn].compactMap { $0 }.min())
         scheduledWake = wake
+    }
+
+    // MARK: - Battery safeguards
+
+    /// False when a battery safeguard says the Mac shouldn't be kept awake right now (as of the last
+    /// `refresh()`). Closed-lid mode and any other keep-awake path must check this.
+    var batteryAllowsAwake: Bool { safeguard == nil }
+
+    private func evaluateSafeguards(_ p: PowerState) -> PauseReason? {
+        if !p.onBattery || batteryStopPercent <= 0 {
+            batteryLatched = false
+        } else if let pct = p.percent, pct < batteryStopPercent {
+            batteryLatched = true
+        }
+        return Self.pauseReason(for: p, stopPercent: batteryStopPercent, onlyPluggedIn: onlyWhenPluggedIn,
+                                respectLowPowerMode: pauseInLowPowerMode, latched: batteryLatched)
+    }
+
+    /// The safeguard rule on its own, with no state: which safeguard (if any) blocks keeping awake.
+    /// Plugged in, nothing blocks. On battery, a low charge (or the latch) comes first, then
+    /// "only when plugged in", then Low Power Mode.
+    nonisolated static func pauseReason(for p: PowerState, stopPercent: Int, onlyPluggedIn: Bool,
+                                        respectLowPowerMode: Bool, latched: Bool) -> PauseReason? {
+        guard p.onBattery else { return nil }
+        if stopPercent > 0, latched || (p.percent.map { $0 < stopPercent } ?? false) {
+            return .batteryLow(p.percent)
+        }
+        if onlyPluggedIn { return .onBattery }
+        if respectLowPowerMode && p.lowPowerMode { return .lowPowerMode }
+        return nil
     }
 
     /// The next check-in time on a fixed clock grid (for 15 min: :00, :15, :30, :45), at least 2 minutes
@@ -450,12 +521,14 @@ final class AwakeController: ObservableObject {
     // MARK: - Menu text
 
     var menuBarSymbol: String {
+        if pauseReason != nil { return "battery.25" }
         if mode == .off { return "moon.zzz" }
         if mode == .timed { return "hourglass" }
         return isAwake ? "cup.and.saucer.fill" : "cup.and.saucer"
     }
 
     var statusLine: String {
+        if let r = pauseReason { return "Paused — \(r.shortLabel)" }
         switch mode {
         case .off:
             return "Off — Mac sleeps normally"
@@ -483,5 +556,15 @@ final class AwakeController: ObservableObject {
     var wakeLine: String? {
         guard let w = scheduledWake else { return nil }
         return "Wakes Mac at \(relativeFormatter.string(from: w))"
+    }
+}
+
+extension PauseReason {
+    var shortLabel: String {
+        switch self {
+        case .batteryLow: return "battery low"
+        case .onBattery: return "on battery"
+        case .lowPowerMode: return "Low Power Mode"
+        }
     }
 }

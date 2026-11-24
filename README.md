@@ -71,6 +71,7 @@ Click the coffee cup in the menu bar to open the panel.
 - Choose which calendars count
 - Set up **Wake from sleep**. Click **Set Up…** and enter your Mac password once.
 - Choose how often a sleeping Mac checks for new events (**Check for new events**: every 15 minutes, 30 minutes, hour, or never)
+- Protect your battery (MacBooks only): stop keeping the Mac awake when the battery gets low (**Stop below**, 10% to start with), keep it awake **Only when plugged in**, or **Pause in Low Power Mode**
 
 **The menu bar icon** tells you the state at a glance:
 - ☕ filled: keeping your Mac awake
@@ -82,6 +83,7 @@ Click the coffee cup in the menu bar to open the panel.
 
 - **Which calendars?** Any calendar that appears in Apple's Calendar app, including Google, Outlook and Exchange. Add the account in **System Settings › Internet Accounts**.
 - **Declined or cancelled events** never keep your Mac awake.
+- **Low battery:** on a MacBook running on battery, MacAwake pauses when the charge drops below your limit, in every mode, and lets the Mac sleep. The panel says **Paused** and why. Plug in and it carries on by itself. A timer keeps counting down while paused.
 - **Closing a MacBook's lid** still puts it to sleep, unless it's connected to power and an external display.
 - **New events while your Mac sleeps:** if you add an event from your phone while the Mac is asleep, MacAwake still catches it. Every 15 minutes (you can change this), it briefly wakes the Mac in the background with the screen off, checks your calendar, and goes back to sleep. So an event added less than 15 minutes before it starts might be missed. Checking works best when the Mac is plugged in; on battery, macOS may stop the check before your calendar has synced.
 - **Quitting MacAwake** lets your Mac sleep normally again and cancels any planned wake-up.
