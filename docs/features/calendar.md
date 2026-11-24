@@ -40,16 +40,18 @@ In **Settings**, two options stretch each event a little:
 - **Stay awake after:** keep going for a few minutes after the event ends (at end, or 1 to 15 minutes after).
 
 <p align="center">
-  <img src="../screenshots/settings.png" width="300" alt="The panel with Settings open, showing Keep display on, Count all-day events, Ignore events marked Free, Wake before, Stay awake after, Stay awake while apps are working, Wake Mac from sleep for events, Check for new events, Keep awake with lid closed and Calendars.">
+  <img src="../screenshots/settings.png" width="300" alt="The panel with Settings open, showing Keep display on, Count all-day events, Ignore events marked Free, Wake before, Stay awake after, the battery settings Stop below, Only when plugged in and Pause in Low Power Mode, Stay awake while apps are working, Wake Mac from sleep for events, Check for new events, Keep awake with lid closed and Calendars.">
 </p>
 
 ## Good to know
 
+- Calendar mode can also keep your Mac awake while apps you pick, such as an AI agent, are busy. See [Stay awake while apps are working](watched-apps.md).
 - Calendar mode keeps a Mac that's already awake from falling asleep. If your Mac has already gone to sleep, turn on [Wake from sleep](wake-from-sleep.md) so MacAwake can wake it for the next event.
-- **Closing a MacBook's lid** puts it to sleep as usual, unless you turn on **Keep awake with lid closed** in [Settings](settings.md). Don't put a Mac that's awake with its lid closed in a bag: it can overheat.
+- **Closing a MacBook's lid** puts it to sleep as usual, unless you turn on [Keep awake with lid closed](lid-closed.md). Don't put a Mac that's awake with its lid closed in a bag: it can overheat.
 - If no events show up, check that MacAwake is allowed to see your calendars in **System Settings › Privacy & Security › Calendars**.
 
 ## Related
 
 - [Wake from sleep](wake-from-sleep.md): wake a sleeping Mac in time for your next event.
+- [Stay awake while apps are working](watched-apps.md): watched apps add to your events.
 - [Settings](settings.md): every option in the panel.

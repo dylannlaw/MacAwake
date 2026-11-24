@@ -43,6 +43,7 @@ How MacAwake works under the hood, plus how to build, release and troubleshoot i
   - Rules apply only on battery or UPS power. In order: charge below **Stop below** → `batteryLow`; **Only when plugged in** → `onBattery`; **Pause in Low Power Mode** and Low Power Mode on → `lowPowerMode`.
   - Once the charge drops below the limit, it stays paused until power is connected (a latch), so readings near the limit can't make it flap. Changing the limit clears the latch.
   - A timer keeps counting down while paused. Check-in wakes are skipped while a rule blocks; event wakes are still scheduled, in case the Mac is plugged in by then.
+  - **Laptop or desktop:** `DeviceKind.current` (in `DeviceKind.swift`) is read once at launch: the device-tree `product-name` on Apple silicon ("MacBook Air (M2, 2022)", "Mac mini (M2)"), else `hw.model` on Intel ("MacBookPro16,1", "Macmini8,1"), else a lid sensor (`AppleClamshellState` on `IOPMrootDomain`) or a built-in battery means a laptop. `BatterySettingsStyle.for(_:power:)` then picks the Settings block: a laptop always gets **Battery** (even if the battery can't be read), a desktop gets a UPS-worded block only while a UPS is attached, otherwise nothing. **Keep awake with lid closed** shows on laptops only. The rules themselves don't depend on the kind: a desktop without a UPS is never on battery, so nothing blocks.
   - Code that keeps the Mac awake must check `AwakeController.batteryAllowsAwake`. The rule itself is the pure `AwakeController.pauseReason(for:stopPercent:onlyPluggedIn:respectLowPowerMode:latched:)`.
 - **Settings** are stored in `UserDefaults` under the bundle ID `local.macawake.app`.
 
@@ -103,7 +104,7 @@ IOKit power assertions (what `caffeinate` uses) can't stop clamshell sleep on ba
 - **Battery:** on battery, it pauses at or below 20%, and resumes only above 25% or on power. This floor can't be lowered.
 - **Heat:** it pauses while `ProcessInfo.thermalState` is `.serious` or `.critical`.
 
-The panel's status area shows "Lid can be closed" or the reason it's paused. The setting is hidden on Macs without a built-in battery.
+The panel's status area shows "Lid can be closed" or the reason it's paused. The setting is shown only on MacBooks (`DeviceKind`, see Battery safeguards above).
 
 **Security:** the helper reads at most 32 bytes, ignores symlinks and non-regular files, and accepts only digits for a time from now to 5 minutes ahead. The only `pmset` commands it runs are the fixed `-g`, `-a disablesleep 1` and `-a disablesleep 0`; nothing from the file is passed on.
 
@@ -122,7 +123,7 @@ The panel's status area shows "Lid can be closed" or the reason it's paused. The
 | Stay awake after | At end | Keeps awake this long after an event ends. |
 | Wake Mac from sleep for events | On | Schedules wakes. Shown once the helper is installed. |
 | Check for new events | Every 15 min | Check-in wakes while asleep (`sleepCheckMinutes`: 0, 5, 15, 30, 60). 0 = never. 5 min catches late-added events sooner but wakes the Mac 12 times an hour, which costs more battery. Shown when wake is on. |
-| Stop below | 10% | `batteryStopPercent`: 0 (Never), 10, 20, 30, 50. On battery, stop keeping awake once the charge is below this, until power is connected. Battery settings show only on Macs with a battery or UPS. |
+| Stop below | 10% | `batteryStopPercent`: 0 (Never), 10, 20, 30, 50. On battery, stop keeping awake once the charge is below this, until power is connected. Shown on MacBooks always, and on desktop Macs while a UPS is attached (worded for the UPS). |
 | Only when plugged in | Off | `onlyWhenPluggedIn`: keep awake only on the power adapter. |
 | Pause in Low Power Mode | Off | `pauseInLowPowerMode`: pause while Low Power Mode is on. Only counts on battery. |
 | Keep awake with lid closed | Off | `lidClosedAwake`. While MacAwake keeps the Mac awake, a closed lid doesn't sleep it, even on battery. Needs the lid helper. Paused at ≤ 20 % battery (resumes > 25 %) or when the Mac is hot. MacBooks only. |
@@ -370,13 +371,13 @@ cat /var/db/local.macawake.lidawake /var/log/macawake-lid.log
 build/MacAwake.app/Contents/MacOS/MacAwake --preview-panel --demo calendar --snapshot /tmp/panel.png
 ```
 
-`--demo` (only with `--preview-panel`) fills the panel with made-up events and two sample calendars. It keeps its settings in a separate `local.macawake.demo` domain, reset on each launch, and holds no power assertions and writes no wake requests, so it's safe to run beside the installed app. Pick the mode with `--demo calendar|always|timer|off` (a timer shows 1h25m left of 2h), and open Settings with `-panel.showSettings YES`. The screenshots in `docs/screenshots/`, used by the README and the feature pages in `docs/features/`, are all made this way. Retake them in one go after `./build.sh`:
+`--demo` (only with `--preview-panel`) fills the panel with made-up events and two sample calendars. It keeps its settings in a separate `local.macawake.demo` domain, reset on each launch, and holds no power assertions and writes no wake requests, so it's safe to run beside the installed app. Pick the state with `--demo calendar|always|timer|off` (a timer shows 1h25m left of 2h), or one of the single-feature states: `apps` (watched `claude`, `codex` and `xcodebuild`, with `claude` busy and no current event), `run` (mode Off with a `macawake run` hold for `claude`), `lid` (lid-closed keep-awake on, shown as active) or `battery` (on battery at 8%, so paused). The demo fakes the power source (on power at 100% unless `battery`), the busy watched items and the holds; the safeguard rule itself is the real one. Open Settings with `-panel.showSettings YES`. The screenshots in `docs/screenshots/`, used by the README and the feature pages in `docs/features/`, are all made this way. Retake them in one go after `./build.sh`:
 
 ```bash
 ./scripts/screenshots.sh
 ```
 
-It takes `calendar.png`, `timer.png`, `always.png`, `off.png` and `settings.png` (Calendar mode with Settings open), quitting each preview after it saves the PNG, then crops `wake-header.png` and `wake.png` from `settings.png` with `sips`. If the Settings layout moves, adjust the crop offsets at the end of the script. Without `--demo`, the preview is a second copy of the app using your real settings, and it writes the same wake request file as the installed app.
+It takes `calendar.png`, `timer.png`, `always.png`, `off.png`, `settings.png` (Calendar mode with Settings open), `run.png` and `battery.png`, quitting each preview after it saves the PNG. It crops `wake-header.png`, `wake.png` and `battery-settings.png` from `settings.png` with `sips`, and `apps-header.png`, `apps.png`, `lid.png` and `lid-setting.png` from full `apps` and `lid` shots that it then deletes. If the Settings layout moves, adjust the crop offsets at the end of the script. Without `--demo`, the preview is a second copy of the app using your real settings, and it writes the same wake request file as the installed app.
 
 ## Troubleshooting
 
@@ -410,6 +411,14 @@ Fake the power source to see the paused panel without draining a battery. `MACAW
 open -n --env MACAWAKE_FAKE_POWER=battery:8 build/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png -mode alwaysOn
 ```
 
+Fake the kind of Mac with `MACAWAKE_FAKE_DEVICE=laptop|desktop`. `--demo` counts as a laptop unless this is set, and honours `MACAWAKE_FAKE_POWER`, so a desktop on a UPS can be previewed safely:
+
+```bash
+MACAWAKE_FAKE_DEVICE=desktop MACAWAKE_FAKE_POWER=ac:100 build/MacAwake.app/Contents/MacOS/MacAwake --preview-panel --demo calendar --snapshot /tmp/panel.png -panel.showSettings YES
+```
+
+`--self-test-battery` also checks the laptop/desktop rule against sample Macs and prints what it detects for this one.
+
 ## Project layout
 
 | Path | What it is |
@@ -419,6 +428,7 @@ open -n --env MACAWAKE_FAKE_POWER=battery:8 build/MacAwake.app --args --preview-
 | `Sources/MacAwake/ProcessWatcher.swift` | Watched apps and commands: process scan and CPU sampling |
 | `Sources/MacAwake/SleepAssertion.swift` | Power assertions (the `caffeinate` part) |
 | `Sources/MacAwake/PowerSource.swift` | Battery and power-adapter state, and the battery self-test |
+| `Sources/MacAwake/DeviceKind.swift` | Laptop or desktop detection, and which battery settings to show |
 | `Sources/MacAwake/SystemPower.swift` | Wake notifications from IOKit, including dark wakes |
 | `Sources/MacAwake/WakeScheduler.swift` | Writes wake requests; installs and removes the wake helper |
 | `Sources/MacAwake/LidScheduler.swift` | Lid lease, lid helper install and removal, battery reading |

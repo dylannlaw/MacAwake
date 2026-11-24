@@ -81,8 +81,12 @@ final class AwakeController: ObservableObject {
     @Published private(set) var lidHelperBusy = false
     @Published private(set) var lidHelperError: String?
     @Published private(set) var lidStatus: LidStatus = .off
-    /// False on Macs without a built-in battery (desktops), which have no lid either.
-    @Published private(set) var hasBattery = false
+    /// MacBook or desktop Mac, read once at launch. Decides which battery and lid settings are offered.
+    let device = DeviceKind.current
+    /// Shows "Keep awake with lid closed": MacBooks only, plus previews of a lid status.
+    @Published private(set) var showsLidSetting = false
+    /// Which battery settings the panel shows: always on a MacBook, on a desktop only while a UPS is attached.
+    var batterySettings: BatterySettingsStyle? { BatterySettingsStyle.for(device, power: powerState) }
     /// An installed helper is older than the one in this app.
     @Published private(set) var helpersNeedUpdate = false
     /// A newer MacAwake on GitHub, from the last check.
@@ -209,7 +213,8 @@ final class AwakeController: ObservableObject {
     /// Opts out of App Nap, which could otherwise delay the 30 s check by minutes and start events late.
     /// Idle system sleep stays allowed; the power assertions decide that.
     private var noNap: NSObjectProtocol?
-    /// Sample events shown instead of the calendar's in a demo.
+    /// Demo stand-ins for what a real Mac would report: events, busy watched items, `macawake run`
+    /// holds and the power source. See `Demo`.
     private var demoEvents: [EKEvent] = []
     /// Last successful update check, and the earliest time to try again after a failed one.
     private var lastUpdateCheck: Date?
@@ -217,6 +222,9 @@ final class AwakeController: ObservableObject {
     private var updateMessageTimer: Timer?
     /// `--preview-panel` copies (demo or not) never check for or install updates.
     private static let isPreview = CommandLine.arguments.contains("--preview-panel")
+    private var demoWorking: [WatchedItem] = []
+    private var demoHeld: [String] = []
+    private var demoPower = PowerState(onBattery: false, percent: 100, hasBattery: true)
 
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -264,8 +272,8 @@ final class AwakeController: ObservableObject {
         availableUpdate = Self.previewUpdate
         wakeHelperInstalled = waker.isHelperInstalled
         lidHelperInstalled = lid.isHelperInstalled
-        // Previews and the demo show the lid setting on desktops too, so screenshots match a MacBook.
-        hasBattery = LidBattery.current().hasBattery || Self.previewLidStatus != nil || Self.isDemo
+        // A lid status preview shows the lid setting on desktops too. The demo counts as a MacBook (`DeviceKind`).
+        showsLidSetting = device.isLaptop || Self.previewLidStatus != nil
         helpersNeedUpdate = waker.helperNeedsUpdate || lid.helperNeedsUpdate
 
         // A demo runs beside the real app: no timers, power assertions or wake requests.
@@ -514,7 +522,7 @@ final class AwakeController: ObservableObject {
 
         // Watched apps and commands (Calendar mode only), with a grace period after the last activity.
         let watching = mode == .auto && watchAppsEnabled && !watchedItems.isEmpty
-        let working = watching ? watcher.active(watchedItems, now: now) : []
+        let working = watching ? (Self.isDemo ? demoWorking : watcher.active(watchedItems, now: now)) : []
         if !working.isEmpty {
             lastWatchedActivity = now
             if recentWatched != working { recentWatched = working }
@@ -548,14 +556,21 @@ final class AwakeController: ObservableObject {
 
         // `macawake run` holds keep the Mac awake whatever the mode.
         holds.prune(now: now)
-        heldNames = holds.names
+        heldNames = Self.isDemo ? demoHeld : holds.names
         heldAwake = !modeAwake && !heldNames.isEmpty
         let shouldBeAwake = modeAwake || heldAwake
         let reason = heldAwake ? "MacAwake: while \(heldNames.joined(separator: ", ")) runs" : modeReason
 
         if Self.isDemo {
-            isAwake = shouldBeAwake
-            scheduledWake = mode == .auto ? upcoming.map { window(for: $0).start } : nil
+            // The real safeguard rule on made-up power; the lid shows on as if its helper had acted.
+            // `MACAWAKE_FAKE_POWER` overrides it (e.g. a desktop on a UPS); a desktop demo has no battery by default.
+            let power = PowerSource.parseFake(ProcessInfo.processInfo.environment["MACAWAKE_FAKE_POWER"])
+                ?? (device.isLaptop ? demoPower : PowerState())
+            powerState = power
+            pauseReason = shouldBeAwake ? evaluateSafeguards(power) : nil
+            isAwake = shouldBeAwake && pauseReason == nil
+            scheduledWake = mode == .auto && pauseReason == nil ? upcoming.map { window(for: $0).start } : nil
+            lidStatus = lidClosedAwake && lidHelperInstalled && isAwake ? .active : .off
             return
         }
 
@@ -1059,18 +1074,31 @@ extension PauseReason {
 
 // MARK: - Demo (screenshots)
 
-/// Sample data for `--preview-panel --demo [calendar|always|timer|off]`, so screenshots for the README
-/// show the same made-up events on any Mac and never anyone's real calendar.
+/// Sample data for `--preview-panel --demo <state>`, so screenshots for the README show the same
+/// made-up events on any Mac and never anyone's real calendar. States: `calendar` (default), `always`,
+/// `timer`, `off`, and for single features `apps` (watched apps busy), `run` (a `macawake run` hold),
+/// `lid` (lid-closed keep-awake on) and `battery` (paused for a low battery).
 enum Demo {
     static let suite = "local.macawake.demo"
+
+    static let choice: String = {
+        let args = CommandLine.arguments
+        return args.firstIndex(of: "--demo").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil } ?? "calendar"
+    }()
+
+    /// Watched items shown in the `apps` state; the first one is busy.
+    static let watched: [WatchedItem] = [.command("claude"), .command("codex"), .command("xcodebuild")]
 
     static func resetDefaults() {
         let d = UserDefaults(suiteName: suite)!
         d.removePersistentDomain(forName: suite)
-        let args = CommandLine.arguments
-        let choice = args.firstIndex(of: "--demo").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
-        let mode: Mode = ["always": .alwaysOn, "timer": .timed, "off": .off][choice ?? ""] ?? .auto
+        let mode: Mode = ["always": .alwaysOn, "timer": .timed, "off": .off, "run": .off][choice] ?? .auto
         d.set(mode.rawValue, forKey: "mode")
+        if choice == "apps" {
+            d.set(true, forKey: "watchAppsEnabled")
+            d.set(try? JSONEncoder().encode(watched), forKey: "watchedItems")
+        }
+        if choice == "lid" { d.set(true, forKey: "lidClosedAwake") }
         if mode == .timed {
             let now = Date().timeIntervalSince1970
             d.set(now - 35 * 60, forKey: "timedStart")
@@ -1083,6 +1111,10 @@ extension AwakeController {
     fileprivate func startDemo() {
         hasAccess = true
         wakeHelperInstalled = true
+        lidHelperInstalled = Demo.choice == "lid"
+        if Demo.choice == "apps" { demoWorking = [Demo.watched[0]] }
+        if Demo.choice == "run" { demoHeld = ["claude"] }
+        if Demo.choice == "battery" { demoPower = PowerState(onBattery: true, percent: 8, hasBattery: true) }
         let work = demoCalendar("Work", red: 0.2, green: 0.5, blue: 1)
         let personal = demoCalendar("Personal", red: 0.95, green: 0.6, blue: 0.1)
         calendars = [personal, work]
@@ -1094,6 +1126,8 @@ extension AwakeController {
             demoEvent("Record podcast", personal, now.addingTimeInterval(3 * hour), now.addingTimeInterval(4 * hour)),
             demoEvent("Overnight data import", work, now.addingTimeInterval(9 * hour), now.addingTimeInterval(12 * hour)),
         ]
+        // Watched apps are what keeps the Mac awake in that state, not an event.
+        if Demo.choice == "apps" { demoEvents.removeFirst() }
         refresh()
     }
 
