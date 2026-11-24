@@ -2,7 +2,7 @@
 
 ## Summary
 
-Adds an XCTest suite (about 180 tests) with a coverage gate of 95% for the app logic, and changes the release workflow so documentation, test and script changes no longer build or release.
+Adds an XCTest suite (about 170 tests) with a coverage gate of 95% for the app logic, and changes the release workflow so documentation, test and script changes no longer build or release.
 
 ## Why
 
