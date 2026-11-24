@@ -259,6 +259,12 @@ final class AwakeController: ObservableObject {
         var openURL: (URL) -> Void = { _ in }
         /// Also register the system observers and timers (for the tests that post notifications).
         var observe = false
+        /// Run the real start-up with this calendar permission, instead of the quiet test start.
+        var authorization: EKAuthorizationStatus?
+        /// Where an update would be installed, instead of the running app.
+        var installDest: URL?
+        /// What happens once an update is in place (really: relaunch and quit).
+        var relaunch: ((URL) -> Void)?
         /// Answer to "is there a newer version?", instead of asking GitHub.
         var checkLatest: (() async throws -> AvailableUpdate?)?
         /// Pretend to be a MacBook or a desktop, instead of reading this Mac.
@@ -316,7 +322,7 @@ final class AwakeController: ObservableObject {
         // A demo runs beside the real app: no timers, power assertions or wake requests.
         if isDemo { startDemo(); return }
         // Under test: no observers, timers or permission prompts. The test calls `refresh()` itself.
-        if let hooks {
+        if let hooks, hooks.authorization == nil {
             hasAccess = hooks.events != nil
             if hooks.observe { startObserving() }
             scheduleTimedExpiry()
@@ -330,7 +336,7 @@ final class AwakeController: ObservableObject {
         startObserving()
         scheduleTimedExpiry()   // didSet doesn't run during init
 
-        switch EKEventStore.authorizationStatus(for: .event) {
+        switch hooks?.authorization ?? EKEventStore.authorizationStatus(for: .event) {
         case .fullAccess:
             hasAccess = true
             reloadCalendars()
@@ -719,7 +725,7 @@ final class AwakeController: ObservableObject {
     func installUpdate() {
         guard let update = availableUpdate, !Self.isPreview, !updateBusy else { return }
         let dest: URL
-        do { dest = try Updater.installedLocation() } catch {
+        do { dest = try hooks?.installDest ?? Updater.installedLocation() } catch {
             return showUpdateMessage(error.localizedDescription, failed: true)
         }
         updateBusy = true
@@ -744,8 +750,10 @@ final class AwakeController: ObservableObject {
                 Updater.cleanUp(app)
                 guard ok else { throw UpdateError("Couldn't replace the app. Nothing was changed.") }
                 NSLog("MacAwake: installed \(update.version), relaunching")
-                Updater.relaunchAfterExit(dest)
-                NSApp.terminate(nil)
+                if let relaunch = hooks?.relaunch { relaunch(dest) } else {
+                    Updater.relaunchAfterExit(dest)
+                    NSApp.terminate(nil)
+                }
             } catch {
                 NSLog("MacAwake: update failed: \(error.localizedDescription)")
                 if let newApp { Updater.cleanUp(newApp) }

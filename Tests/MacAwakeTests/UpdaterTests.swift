@@ -380,3 +380,111 @@ final class ControllerUpdateTests: XCTestCase {
         XCTAssertEqual(r.controller.updateMessage, "MacAwake isn't running from an app bundle.")
     }
 }
+
+@MainActor
+final class ControllerStartupAndInstallTests: XCTestCase {
+    func testStartupWithFullAccess() {
+        let r = makeRig(self, calendar: false, authorization: .fullAccess)
+        XCTAssertTrue(r.controller.hasAccess)
+    }
+
+    func testStartupWithoutAccess() {
+        let r = makeRig(self, calendar: false, authorization: .denied)
+        XCTAssertFalse(r.controller.hasAccess)
+        XCTAssertEqual(r.controller.statusLine, "Needs calendar access")
+    }
+
+    func testStartupAsksWhenUndecided() async throws {
+        let r = makeRig(self, calendar: false, requestAccess: { true }, authorization: .notDetermined)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertTrue(r.controller.hasAccess)
+    }
+
+    func testDeviceReaders() {
+        _ = DeviceInfo.productName()
+        _ = DeviceInfo.model()
+        _ = DeviceInfo.hasClamshell()
+        XCTAssertNotNil(DeviceKind.current)
+    }
+
+    // MARK: Install
+
+    private func fixture(version: String) throws -> (AvailableUpdate, URL) {
+        let dir = makeTempDir(self)
+        let src = dir.appendingPathComponent("src/MacAwake.app/Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: src.appendingPathComponent("MacOS"), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(atPath: "/bin/echo", toPath: src.appendingPathComponent("MacOS/MacAwake").path)
+        let id = Bundle.main.bundleIdentifier.map { "<key>CFBundleIdentifier</key><string>\($0)</string>" } ?? ""
+        try """
+        <?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>\(id)\
+        <key>CFBundleExecutable</key><string>MacAwake</string>\
+        <key>CFBundleShortVersionString</key><string>\(version)</string></dict></plist>
+        """.write(to: src.appendingPathComponent("Info.plist"), atomically: true, encoding: .utf8)
+        func run(_ path: String, _ args: [String]) throws {
+            let p = Process(); p.executableURL = URL(fileURLWithPath: path); p.arguments = args
+            p.standardError = FileHandle.nullDevice; p.standardOutput = FileHandle.nullDevice
+            try p.run(); p.waitUntilExit()
+        }
+        try run("/usr/bin/codesign", ["--force", "-s", "-", dir.appendingPathComponent("src/MacAwake.app").path])
+        let zip = dir.appendingPathComponent("MacAwake.zip")
+        try run("/usr/bin/ditto", ["-c", "-k", dir.appendingPathComponent("src").path, zip.path])
+        let sum = dir.appendingPathComponent("MacAwake.zip.sha256")
+        try SHA256.hash(data: try Data(contentsOf: zip)).map { String(format: "%02x", $0) }.joined()
+            .write(to: sum, atomically: true, encoding: .utf8)
+        let saved = Updater.feedOverride
+        Updater.feedOverride = dir.appendingPathComponent("feed.json")
+        addTeardownBlock { Updater.feedOverride = saved }
+        return (AvailableUpdate(version: version, zipURL: zip, checksumURL: sum), dir)
+    }
+
+    private func installed(_ dest: URL, in r: Rig, update: AvailableUpdate) async throws {
+        r.controller.checkForUpdatesNow()
+        try await Task.sleep(nanoseconds: 300_000_000)
+        r.controller.installUpdate()
+        try await Task.sleep(nanoseconds: 2_000_000_000)
+    }
+
+    func testInstallSwapsTheAppAndRelaunches() async throws {
+        let (update, dir) = try fixture(version: "99999.9.9")
+        let dest = dir.appendingPathComponent("Installed/MacAwake.app", isDirectory: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        try "old".write(to: dest.appendingPathComponent("old.txt"), atomically: true, encoding: .utf8)
+        let relaunched = Box<URL?>(nil)
+        let r = makeRig(self, checkLatest: { update }, installDest: dest, relaunch: { relaunched.value = $0 })
+        try await installed(dest, in: r, update: update)
+        XCTAssertEqual(relaunched.value, dest)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("Contents/Info.plist").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dest.appendingPathComponent("old.txt").path))
+    }
+
+    func testInstallFailureShowsMessage() async throws {
+        let (update, dir) = try fixture(version: "1.2.3")   // not the version the release claims
+        let bad = AvailableUpdate(version: "99999.9.9", zipURL: update.zipURL, checksumURL: update.checksumURL)
+        let dest = dir.appendingPathComponent("Installed/MacAwake.app", isDirectory: true)
+        try FileManager.default.createDirectory(at: dest, withIntermediateDirectories: true)
+        let r = makeRig(self, checkLatest: { bad }, installDest: dest, relaunch: { _ in XCTFail("must not relaunch") })
+        try await installed(dest, in: r, update: bad)
+        XCTAssertTrue(r.controller.updateFailed)
+        XCTAssertFalse(r.controller.updateBusy)
+    }
+
+    func testInstallUsesAdminWhenNotWritable() async throws {
+        let (update, _) = try fixture(version: "99999.9.9")
+        let seen = withFakeAdmin(self)
+        let relaunched = Box<URL?>(nil)
+        let dest = URL(fileURLWithPath: "/System/Applications/Calculator.app")
+        let r = makeRig(self, checkLatest: { update }, installDest: dest, relaunch: { relaunched.value = $0 })
+        try await installed(dest, in: r, update: update)
+        XCTAssertEqual(seen.value.count, 1)
+        XCTAssertEqual(relaunched.value, dest)
+    }
+
+    func testInstallAdminRefusedStopsWithMessage() async throws {
+        let (update, _) = try fixture(version: "99999.9.9")
+        _ = withFakeAdmin(self, succeed: false)
+        let dest = URL(fileURLWithPath: "/System/Applications/Calculator.app")
+        let r = makeRig(self, checkLatest: { update }, installDest: dest, relaunch: { _ in XCTFail("must not relaunch") })
+        try await installed(dest, in: r, update: update)
+        XCTAssertEqual(r.controller.updateMessage, "Couldn't replace the app. Nothing was changed.")
+    }
+}
