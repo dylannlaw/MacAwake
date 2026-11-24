@@ -18,6 +18,18 @@
     <string>1</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
+    <!-- macawake:// commands for scripts, Shortcuts and the macawake CLI -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>local.macawake.app</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>macawake</string>
+            </array>
+        </dict>
+    </array>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>NSHumanReadableCopyright</key>
