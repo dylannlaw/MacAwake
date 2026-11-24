@@ -38,7 +38,8 @@ The build must finish with no errors. Then check what you changed:
 
 Documentation is split by audience. Update whichever your change affects, in the same change:
 
-- **UI changes:** if the panel looks or behaves differently, retake the README screenshots in `docs/screenshots/` (`calendar.png`, `timer.png`, `settings.png`) with the `--demo` command from step 3, and update the README text and alt text that describe them. The README must always match what users see.
+- **UI changes:** if the panel looks or behaves differently, retake every screenshot in `docs/screenshots/` with `./scripts/screenshots.sh` (it uses the `--demo` preview from step 3), look at them, and update the README, the feature pages in `docs/features/`, and their alt text to match. The README and feature pages must always match what users see.
+- **New or changed features:** each feature has a plain-language page in `docs/features/`, linked from the "What it can do" table in the README with a screenshot. A new feature gets a new page, a screenshot and a table cell; a changed feature updates its page.
 
 - **`README.md`**: for people who just use the app, many of them not technical. It covers what the app does, why it exists, how to install it and how to use it. Use plain language: no code, file paths, commands or internals. Keep it short and describe how things are now; it isn't a changelog.
 - **`TECHNICAL.md`**: everything else. How it works internally, the wake helper, the settings reference with defaults, building, releases and signing, how to check it's working, troubleshooting commands and the project layout.
