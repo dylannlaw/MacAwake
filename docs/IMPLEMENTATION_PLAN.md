@@ -11,7 +11,7 @@ MacAwake is a macOS menu bar app that keeps the Mac awake (like `caffeinate -di`
 - Need no setup beyond granting calendar access once.
 
 **Non-goals (v1)**
-- Preventing sleep when a MacBook lid is closed (this needs clamshell mode, the same as `caffeinate`).
+- Preventing sleep when a MacBook lid is closed (this needs clamshell mode, the same as `caffeinate`). *Superseded by [Closed-lid keep-awake](changes/2026-11-24-closed-lid.md).*
 - Talking to calendar provider APIs directly (Google or Microsoft Graph).
 - Distribution through the Mac App Store or notarised releases.
 
