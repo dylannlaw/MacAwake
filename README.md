@@ -78,13 +78,31 @@ Click a feature to read how it works and when to use it.
       <a href="docs/features/settings.md"><img src="docs/screenshots/settings.png" width="260" alt="The panel with Settings open"></a>
     </td>
   </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🤖 <a href="docs/features/watched-apps.md">Stay awake while your apps are working</a></h3>
+      Pick the apps or tools to watch, such as an AI coding agent. Your Mac stays awake while they're busy and sleeps a few minutes after they finish.<br><br>
+      <a href="docs/features/watched-apps.md"><img src="docs/screenshots/apps.png" width="260" alt="The 'Stay awake while apps are working' setting listing claude (busy, with a green dot), codex and xcodebuild, each set to 'While working'"></a>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🏃 <a href="docs/features/run-a-job.md">Stay awake while a job runs</a></h3>
+      Start a long task from the Terminal or Shortcuts, and MacAwake keeps your Mac awake until it finishes, then goes back to what it was doing.<br><br>
+      <a href="docs/features/run-a-job.md"><img src="docs/screenshots/run.png" width="260" alt="'Awake for a command: while claude runs, then as before', with the mode still set to Off"></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>💻 <a href="docs/features/lid-closed.md">Keep running with the lid closed</a></h3>
+      On a MacBook, close the lid and walk away while MacAwake keeps your Mac awake, even on battery. Your AI agent or long job keeps going.<br><br>
+      <a href="docs/features/lid-closed.md"><img src="docs/screenshots/lid.png" width="260" alt="The top of the panel, awake for an event, with 'Lid can be closed'"></a>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🔋 <a href="docs/features/battery.md">Protect your battery</a></h3>
+      On a MacBook, MacAwake pauses when the battery runs low, or whenever you're unplugged if you prefer, and carries on when you plug in.<br><br>
+      <a href="docs/features/battery.md"><img src="docs/screenshots/battery.png" width="260" alt="'Paused: battery low. Battery at 8%. Plug in to keep your Mac awake.'"></a>
+    </td>
+  </tr>
 </table>
-
-🤖 **Stay awake while your apps are working.** Pick the apps or tools to watch, such as an AI coding agent. Your Mac stays awake while they're busy and sleeps a few minutes after they finish. Set it up in **Settings** (Calendar mode).
-
-💻 **Keep running with the lid closed.** On a MacBook, you can close the lid and walk away while MacAwake keeps your Mac awake, even on battery. Your AI agent or long job keeps going. Turn it on in **Settings**.
-
-🤖 **Stay awake while a job runs.** Start a long task from the Terminal or Shortcuts, and MacAwake keeps your Mac awake until it finishes, then goes back to what it was doing.
 
 ## Get started
 
@@ -111,7 +129,7 @@ Click the coffee cup in the menu bar to open the panel.
 - **At the top**, you'll see what MacAwake is doing right now. For example: "Awake for an event · until 3:00 PM", or how long the timer has left.
 - **Choose a mode** by clicking one of the four tiles: [Calendar](docs/features/calendar.md), [Always](docs/features/always-on.md), [Timer](docs/features/timer.md) or [Off](docs/features/off.md).
 - **Coming up** lists your next few events. The one keeping your Mac awake right now is marked **Now**.
-- **Settings** (click to open) holds the options for calendar events, watched apps and [waking from sleep](docs/features/wake-from-sleep.md). To watch an app, click **Add** under **Stay awake while apps are working** and pick an AI agent (like Claude Code or Codex), one of your open apps, or a command by name; choose **While working** or **While open**, and how long to stay awake after it finishes. On a MacBook, you can protect your battery there (stop below a charge level, 10% to start with; keep awake **Only when plugged in**; or **Pause in Low Power Mode**), and turn on **Keep awake with lid closed** (click **Set Up…** and enter your Mac password once). Every option is explained in [Settings and the menu bar](docs/features/settings.md).
+- **Settings** (click to open) holds the options for calendar events, watched apps and [waking from sleep](docs/features/wake-from-sleep.md). To [watch an app](docs/features/watched-apps.md), click **Add** under **Stay awake while apps are working** and pick an AI agent (like Claude Code or Codex), one of your open apps, or a command by name; choose **While working** or **While open**, and how long to stay awake after it finishes. On a MacBook, you can [protect your battery](docs/features/battery.md) there (stop below a charge level, 10% to start with; keep awake **Only when plugged in**; or **Pause in Low Power Mode**), and turn on [Keep awake with lid closed](docs/features/lid-closed.md) (click **Set Up…** and enter your Mac password once). Every option is explained in [Settings and the menu bar](docs/features/settings.md).
 
 **The menu bar icon** tells you the state at a glance:
 - ☕ filled: keeping your Mac awake
@@ -124,7 +142,7 @@ Click the coffee cup in the menu bar to open the panel.
 You can start a timer, add time, stop or switch mode without opening the panel. This is handy for automations and for AI tools that run on their own.
 
 - **Shortcuts:** add an **Open URLs** action with a MacAwake link. For example, *macawake://start?minutes=90* keeps your Mac awake for 90 minutes, and *macawake://off* turns MacAwake off. The other links are *extend*, *stop*, *always* and *calendar*.
-- **Terminal:** MacAwake includes a small Terminal command. Start a long job through it, such as an AI coding assistant, and your Mac stays awake exactly as long as the job runs.
+- **Terminal:** MacAwake includes a small Terminal command. Start a long job through it, such as an AI coding assistant, and your Mac stays awake exactly as long as the job runs. See [Stay awake while a job runs](docs/features/run-a-job.md).
 
 The full list of links and commands, and how to set up the command, are in the [Technical guide](TECHNICAL.md#automation-urls-and-the-macawake-command).
 
