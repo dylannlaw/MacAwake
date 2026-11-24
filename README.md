@@ -8,6 +8,10 @@
   · Free · Works on any Mac with macOS 14 or later
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/calendar.png" width="340" alt="The MacAwake panel in Calendar mode, keeping the Mac awake during an event and listing the next ones">
+</p>
+
 ## Contents
 
 - [Why MacAwake?](#why-macawake)
@@ -49,6 +53,13 @@ MacAwake now lives in the menu bar at the top of your screen; look for the coffe
 ## Using MacAwake
 
 Click the coffee cup in the menu bar to open the panel.
+
+<table>
+  <tr>
+    <td align="center" valign="top"><img src="docs/screenshots/timer.png" width="300" alt="Timer mode: a ring counting down, with +30m, +1h and Stop buttons"><br><sub><b>Timer:</b> counts down, then turns off</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/settings.png" width="300" alt="The Settings section opened"><br><sub><b>Settings</b> opened (Calendar mode)</sub></td>
+  </tr>
+</table>
 
 **At the top**, you'll see what MacAwake is doing right now. For example: "Awake for an event · until 3:00 PM", or how long the timer has left.
 
