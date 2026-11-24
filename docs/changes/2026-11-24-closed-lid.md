@@ -55,6 +55,8 @@ The approved plan is [`docs/plans/closed-lid.md`](../plans/closed-lid.md).
 
 **Refactor.** `runAsAdmin` and `q()` moved from `WakeScheduler` into `AdminShell`, shared by both helpers. There's no behaviour change for the wake helper.
 
+**Merged with watched apps (#16).** The lid hold follows `shouldBeAwake`, so it also applies while a watched app or command keeps Calendar mode awake. The `--demo` preview returns before `updateLid`, so it never writes the lease. It shows the lid setting even on a desktop Mac, so the README Settings screenshot (retaken) matches a MacBook.
+
 **Preview safety.** A `--preview-panel` copy never writes the lease, so quitting it can't release the running app's hold. `--preview-lid-status active|starting|battery|hot` shows a lid status, and the setting row, for snapshots.
 
 **Options considered and not picked**
