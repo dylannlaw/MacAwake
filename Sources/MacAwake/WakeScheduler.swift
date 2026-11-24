@@ -103,37 +103,18 @@ final class WakeScheduler {
         runAsAdmin(script, prompt: "MacAwake wants to remove its wake helper.", completion: completion)
     }
 
-    /// Runs a shell command as root through the standard macOS admin password dialog.
     private func runAsAdmin(_ command: String, prompt: String, completion: @escaping (Bool) -> Void) {
-        let escaped = command
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let apple = "do shell script \"\(escaped)\" with prompt \"\(prompt)\" with administrator privileges"
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            p.arguments = ["-e", apple]
-            let err = Pipe()
-            p.standardError = err
-            var ok = false
-            do {
-                try p.run()
-                p.waitUntilExit()
-                ok = p.terminationStatus == 0
-                if !ok {
-                    let msg = String(data: err.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                    NSLog("MacAwake: admin command failed: \(msg)")
-                }
-            } catch {
-                NSLog("MacAwake: could not run osascript: \(error)")
-            }
-            DispatchQueue.main.async { completion(ok) }
-        }
+        AdminShell.run(command, prompt: prompt, completion: completion)
     }
 
-    /// Single-quotes a string for /bin/sh.
-    private func q(_ s: String) -> String {
-        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    private func q(_ s: String) -> String { AdminShell.q(s) }
+
+    /// True when the installed root copy is older than the one in this app.
+    var helperNeedsUpdate: Bool {
+        guard isHelperInstalled,
+              let bundled = Bundle.main.path(forResource: "wake-helper", ofType: "sh"),
+              let new = AdminShell.helperVersion(atPath: bundled),
+              let old = AdminShell.helperVersion(atPath: Self.helperPath) else { return false }
+        return old < new
     }
 }

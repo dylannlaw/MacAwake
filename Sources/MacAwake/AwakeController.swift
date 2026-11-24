@@ -16,6 +16,20 @@ enum Mode: String, CaseIterable, Identifiable {
     }
 }
 
+/// What the lid-closed keep-awake is doing, for the panel.
+enum LidStatus: Equatable {
+    case off            // setting off, or nothing is keeping the Mac awake
+    case starting       // asked for, waiting for the helper to act
+    case active         // the lid can be closed
+    case pausedBattery  // on battery below the safety floor
+    case pausedHot      // macOS reports the Mac is too hot
+}
+
+/// Lid-closed keep-awake never runs on battery at or below this, whatever other settings say.
+let lidBatteryFloor = 20
+/// …and after it pauses, waits until the battery is back above this before resuming.
+let lidBatteryResume = 25
+
 /// Choices for "Keep awake for", in minutes.
 let timedDurations = [30, 60, 120, 180, 240, 360, 480, 720]
 
@@ -49,6 +63,14 @@ final class AwakeController: ObservableObject {
     @Published private(set) var wakeHelperBusy = false
     /// Shown in the panel when setting up or removing the helper didn't work.
     @Published private(set) var wakeHelperError: String?
+    @Published private(set) var lidHelperInstalled = false
+    @Published private(set) var lidHelperBusy = false
+    @Published private(set) var lidHelperError: String?
+    @Published private(set) var lidStatus: LidStatus = .off
+    /// False on Macs without a built-in battery (desktops), which have no lid either.
+    @Published private(set) var hasBattery = false
+    /// An installed helper is older than the one in this app.
+    @Published private(set) var helpersNeedUpdate = false
 
     // MARK: - Settings (persisted in UserDefaults)
 
@@ -88,6 +110,11 @@ final class AwakeController: ObservableObject {
     @Published var sleepCheckMinutes: Int {
         didSet { defaults.set(sleepCheckMinutes, forKey: "sleepCheckMinutes"); refresh() }
     }
+    /// Keep the Mac awake with its lid closed (even on battery) while MacAwake is keeping it awake.
+    /// Change it through `setLidClosedAwake(_:)` from the UI, which shows the heat warning first.
+    @Published var lidClosedAwake: Bool {
+        didSet { defaults.set(lidClosedAwake, forKey: "lidClosedAwake"); refresh() }
+    }
     @Published var excludedCalendarIDs: Set<String> {
         didSet { defaults.set(Array(excludedCalendarIDs), forKey: "excludedCalendarIDs"); refresh() }
     }
@@ -98,6 +125,10 @@ final class AwakeController: ObservableObject {
     private let store = EKEventStore()
     private let assertion = SleepAssertion()
     private let waker = WakeScheduler()
+    private let lid = LidScheduler()
+    private var powerWatcher: PowerSourceWatcher?
+    /// Set when the lid hold paused for a low battery; cleared above `lidBatteryResume` or on power.
+    private var lidBatteryLatched = false
     private var timer: Timer?
     private var expiryTimer: Timer?
     private var power: SystemPower?
@@ -139,7 +170,11 @@ final class AwakeController: ObservableObject {
         excludedCalendarIDs = Set(defaults.stringArray(forKey: "excludedCalendarIDs") ?? [])
         wakeForEvents = defaults.object(forKey: "wakeForEvents") as? Bool ?? true
         sleepCheckMinutes = defaults.object(forKey: "sleepCheckMinutes") as? Int ?? 15
+        lidClosedAwake = defaults.object(forKey: "lidClosedAwake") as? Bool ?? false
         wakeHelperInstalled = waker.isHelperInstalled
+        lidHelperInstalled = lid.isHelperInstalled
+        hasBattery = LidBattery.current().hasBattery || Self.previewLidStatus != nil   // preview: show the row on desktops too
+        helpersNeedUpdate = waker.helperNeedsUpdate || lid.helperNeedsUpdate
 
         noNap = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiatedAllowingIdleSystemSleep],
@@ -237,12 +272,25 @@ final class AwakeController: ObservableObject {
             Task { @MainActor in self?.refresh() }
         })
 
-        // Quitting — don't leave a wake behind that nothing will act on.
+        // Quitting — don't leave a wake behind that nothing will act on, and give the lid back.
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.willTerminateNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.waker.request(nil) }
+            MainActor.assumeIsolated {
+                self?.waker.request(nil)
+                self?.lid.request(false)
+            }
         })
+
+        // The lid hold pauses when the Mac gets hot or the battery runs low.
+        observers.append(NotificationCenter.default.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        })
+        powerWatcher = PowerSourceWatcher { [weak self] in
+            Task { @MainActor in self?.refresh() }
+        }
     }
 
     /// The Mac just powered on, possibly only in a dark wake for a check-in. Keep it up for a minute,
@@ -358,6 +406,149 @@ final class AwakeController: ObservableObject {
         let checkIn = (wakes && hasAccess) ? nextCheckIn(after: now) : nil
         waker.request([wake, checkIn].compactMap { $0 }.min())
         scheduledWake = wake
+
+        updateLid(shouldBeAwake: shouldBeAwake)
+    }
+
+    // MARK: - Lid closed
+
+    /// Decides the lid hold. Only while MacAwake is keeping the Mac awake, the setting is on, the helper
+    /// is installed, and the battery and temperature allow it. The helper releases it by itself if the
+    /// app stops renewing the lease.
+    private func updateLid(shouldBeAwake: Bool) {
+        let installed = lid.isHelperInstalled
+        if installed != lidHelperInstalled { lidHelperInstalled = installed }
+
+        let battery = lidBatteryAllows()
+        let cool = thermalAllows()
+        let want = lidClosedAwake && shouldBeAwake && installed && battery && cool
+        lid.request(want)
+
+        let status: LidStatus
+        if !lidClosedAwake || !shouldBeAwake || !installed { status = .off }
+        else if !battery { status = .pausedBattery }
+        else if !cool { status = .pausedHot }
+        else { status = lid.isHoldActive ? .active : .starting }
+        let shown = Self.previewLidStatus ?? status
+        if shown != lidStatus { lidStatus = shown }
+    }
+
+    /// Debug: `--preview-lid-status active|starting|battery|hot` (with `--preview-panel`) shows that
+    /// status in the panel, for snapshots. It changes only what's shown, never the lease.
+    private static let previewLidStatus: LidStatus? = {
+        let a = CommandLine.arguments
+        guard a.contains("--preview-panel"), let i = a.firstIndex(of: "--preview-lid-status"), i + 1 < a.count
+        else { return nil }
+        switch a[i + 1] {
+        case "active": return .active
+        case "starting": return .starting
+        case "battery": return .pausedBattery
+        case "hot": return .pausedHot
+        default: return nil
+        }
+    }()
+
+    /// The mandatory battery floor for the lid hold. On power: always allowed. On battery: paused at or
+    /// below `lidBatteryFloor` %, and resumes only above `lidBatteryResume` %, so it doesn't flap.
+    /// Swap point for the battery-safeguards change: also require its shared check here.
+    private func lidBatteryAllows() -> Bool {
+        let b = LidBattery.current()
+        guard b.hasBattery, b.onBattery, let pct = b.percent else {
+            lidBatteryLatched = false
+            return true
+        }
+        if pct <= lidBatteryFloor { lidBatteryLatched = true }
+        else if pct > lidBatteryResume { lidBatteryLatched = false }
+        return !lidBatteryLatched
+    }
+
+    /// Pauses the lid hold while macOS reports the Mac as seriously hot.
+    private func thermalAllows() -> Bool {
+        switch ProcessInfo.processInfo.thermalState {
+        case .serious, .critical: return false
+        default: return true
+        }
+    }
+
+    /// Turning the setting on shows the heat warning the first time.
+    func setLidClosedAwake(_ on: Bool) {
+        if on && !confirmLidWarning() { return }
+        lidClosedAwake = on
+    }
+
+    /// Installs the lid helper (after the warning) and turns the setting on.
+    func setUpLidClosed() {
+        guard confirmLidWarning() else { return }
+        lidHelperBusy = true
+        lidHelperError = nil
+        lid.install { [weak self] ok in
+            guard let self else { return }
+            self.lidHelperBusy = false
+            self.lidHelperInstalled = self.lid.isHelperInstalled
+            self.helpersNeedUpdate = self.waker.helperNeedsUpdate || self.lid.helperNeedsUpdate
+            if ok { self.lidClosedAwake = true }
+            else { self.lidHelperError = "Setup didn't finish. Try again, or check Console for details." }
+            self.refresh()
+        }
+    }
+
+    func uninstallLidHelper() {
+        lidHelperBusy = true
+        lidHelperError = nil
+        lid.request(false)
+        lid.uninstall { [weak self] ok in
+            guard let self else { return }
+            self.lidHelperBusy = false
+            self.lidHelperInstalled = self.lid.isHelperInstalled
+            if !ok { self.lidHelperError = "Couldn't remove the lid-closed helper." }
+            self.refresh()
+        }
+    }
+
+    /// Re-installs whichever helpers are older than the copies in this app.
+    func updateHelpers() {
+        if waker.helperNeedsUpdate { installWakeHelper() }
+        if lid.helperNeedsUpdate {
+            lidHelperBusy = true
+            lid.install { [weak self] ok in
+                guard let self else { return }
+                self.lidHelperBusy = false
+                if !ok { self.lidHelperError = "Couldn't update the lid-closed helper." }
+                self.helpersNeedUpdate = self.waker.helperNeedsUpdate || self.lid.helperNeedsUpdate
+                self.refresh()
+            }
+        }
+    }
+
+    /// Explains the risk once. Returns false if the user cancels.
+    private func confirmLidWarning() -> Bool {
+        if defaults.bool(forKey: "lidWarningAcknowledged") { return true }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Keep your Mac awake with the lid closed?"
+        alert.informativeText = """
+            While MacAwake is keeping your Mac awake, closing the lid won't put it to sleep, even on battery.
+
+            Don't put your Mac in a bag or sleeve while this is on: it can overheat. MacAwake pauses this if \
+            the Mac gets too hot or the battery drops to \(lidBatteryFloor)%, and your Mac sleeps normally \
+            again as soon as MacAwake stops keeping it awake.
+            """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Turn On")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        defaults.set(true, forKey: "lidWarningAcknowledged")
+        return true
+    }
+
+    var lidLine: String? {
+        switch lidStatus {
+        case .off: return nil
+        case .starting: return "Turning on lid-closed mode…"
+        case .active: return "Lid can be closed"
+        case .pausedBattery: return "Lid-closed paused · battery low"
+        case .pausedHot: return "Lid-closed paused · Mac is hot"
+        }
     }
 
     /// The next check-in time on a fixed clock grid (for 15 min: :00, :15, :30, :45), at least 2 minutes
@@ -378,6 +569,7 @@ final class AwakeController: ObservableObject {
             guard let self else { return }
             self.wakeHelperBusy = false
             self.wakeHelperInstalled = self.waker.isHelperInstalled
+            self.helpersNeedUpdate = self.waker.helperNeedsUpdate || self.lid.helperNeedsUpdate
             if !ok { self.wakeHelperError = "Setup didn't finish. Try again, or check Console for details." }
             self.refresh()
         }
