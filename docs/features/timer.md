@@ -36,7 +36,7 @@ When the timer runs out, or you press **Stop**, MacAwake switches to **Off** and
 ## Good to know
 
 - The timer keeps counting if you close the panel.
-- **Closing a MacBook's lid** puts it to sleep as usual, unless you turn on **Keep awake with lid closed** in [Settings](settings.md). Don't put a Mac that's awake with its lid closed in a bag: it can overheat.
+- **Closing a MacBook's lid** puts it to sleep as usual, unless you turn on [Keep awake with lid closed](lid-closed.md). Don't put a Mac that's awake with its lid closed in a bag: it can overheat.
 - To keep the screen from dimming as well, turn on **Keep display on** in [Settings](settings.md).
 
 ## Related

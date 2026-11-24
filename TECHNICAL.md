@@ -342,13 +342,13 @@ cat /var/db/local.macawake.lidawake /var/log/macawake-lid.log
 build/MacAwake.app/Contents/MacOS/MacAwake --preview-panel --demo calendar --snapshot /tmp/panel.png
 ```
 
-`--demo` (only with `--preview-panel`) fills the panel with made-up events and two sample calendars. It keeps its settings in a separate `local.macawake.demo` domain, reset on each launch, and holds no power assertions and writes no wake requests, so it's safe to run beside the installed app. Pick the mode with `--demo calendar|always|timer|off` (a timer shows 1h25m left of 2h), and open Settings with `-panel.showSettings YES`. The screenshots in `docs/screenshots/`, used by the README and the feature pages in `docs/features/`, are all made this way. Retake them in one go after `./build.sh`:
+`--demo` (only with `--preview-panel`) fills the panel with made-up events and two sample calendars. It keeps its settings in a separate `local.macawake.demo` domain, reset on each launch, and holds no power assertions and writes no wake requests, so it's safe to run beside the installed app. Pick the state with `--demo calendar|always|timer|off` (a timer shows 1h25m left of 2h), or one of the single-feature states: `apps` (watched `claude`, `codex` and `xcodebuild`, with `claude` busy and no current event), `run` (mode Off with a `macawake run` hold for `claude`), `lid` (lid-closed keep-awake on, shown as active) or `battery` (on battery at 8%, so paused). The demo fakes the power source (on power at 100% unless `battery`), the busy watched items and the holds; the safeguard rule itself is the real one. Open Settings with `-panel.showSettings YES`. The screenshots in `docs/screenshots/`, used by the README and the feature pages in `docs/features/`, are all made this way. Retake them in one go after `./build.sh`:
 
 ```bash
 ./scripts/screenshots.sh
 ```
 
-It takes `calendar.png`, `timer.png`, `always.png`, `off.png` and `settings.png` (Calendar mode with Settings open), quitting each preview after it saves the PNG, then crops `wake-header.png` and `wake.png` from `settings.png` with `sips`. If the Settings layout moves, adjust the crop offsets at the end of the script. Without `--demo`, the preview is a second copy of the app using your real settings, and it writes the same wake request file as the installed app.
+It takes `calendar.png`, `timer.png`, `always.png`, `off.png`, `settings.png` (Calendar mode with Settings open), `run.png` and `battery.png`, quitting each preview after it saves the PNG. It crops `wake-header.png`, `wake.png` and `battery-settings.png` from `settings.png` with `sips`, and `apps-header.png`, `apps.png`, `lid.png` and `lid-setting.png` from full `apps` and `lid` shots that it then deletes. If the Settings layout moves, adjust the crop offsets at the end of the script. Without `--demo`, the preview is a second copy of the app using your real settings, and it writes the same wake request file as the installed app.
 
 ## Troubleshooting
 

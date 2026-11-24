@@ -16,7 +16,7 @@ Requested: the panel should offer battery settings based on the kind of Mac. Bef
   3. Hardware: `AppleClamshellState` on `IOPMrootDomain` (only Macs with a lid have it) or a present internal battery → laptop; otherwise desktop.
 - **Which settings** (`BatterySettingsStyle.for(_:power:)`): laptop → `.battery`, always; desktop → `.ups` while `PowerState.hasBattery` (a UPS), else none. **Keep awake with lid closed** shows on laptops only (or with `--preview-lid-status`).
 - **Rules unchanged.** The safeguard rules don't look at the kind of Mac; a desktop without a UPS is never on battery, so nothing ever blocks. Only what's shown and how it's worded changes.
-- **Testing hooks:** `MACAWAKE_FAKE_DEVICE=laptop|desktop`. `--demo` counts as a laptop by default (so the screenshots show every setting, as before) and now also honours `MACAWAKE_FAKE_POWER`, so a desktop on a UPS can be previewed without touching real settings. `--self-test-battery` gained 13 cases for detection and settings choice, and prints what it detects for this Mac.
+- **Testing hooks:** `MACAWAKE_FAKE_DEVICE=laptop|desktop`. `--demo` counts as a laptop by default (so the screenshots show every setting, as before). A demo's made-up power (from main's `--demo battery`) applies to laptops only; a desktop demo has no battery unless `MACAWAKE_FAKE_POWER` is set, which overrides both, so a desktop on a UPS can be previewed without touching real settings. `--self-test-battery` gained 13 cases for detection and settings choice, and prints what it detects for this Mac.
 
 **Options considered and not picked**
 - *`hw.model` alone:* doesn't distinguish Apple silicon laptops from desktops.
