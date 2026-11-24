@@ -46,6 +46,10 @@ final class AwakeController: ObservableObject {
         didSet { defaults.set(timedStart?.timeIntervalSince1970, forKey: "timedStart") }
     }
     @Published private(set) var wakeHelperInstalled = false
+    /// True when only `macawake run` holds (not the mode) are keeping the Mac awake.
+    @Published private(set) var heldAwake = false
+    /// Names of the processes `macawake run` is holding awake for.
+    @Published private(set) var heldNames: [String] = []
     @Published private(set) var wakeHelperBusy = false
     /// Shown in the panel when setting up or removing the helper didn't work.
     @Published private(set) var wakeHelperError: String?
@@ -98,6 +102,7 @@ final class AwakeController: ObservableObject {
     private let store = EKEventStore()
     private let assertion = SleepAssertion()
     private let waker = WakeScheduler()
+    private let holds = ProcessHolds()
     private var timer: Timer?
     private var expiryTimer: Timer?
     private var power: SystemPower?
@@ -205,6 +210,9 @@ final class AwakeController: ObservableObject {
     // MARK: - Refresh triggers
 
     private func startObserving() {
+        // A held process exited.
+        holds.onChange = { [weak self] in self?.refresh() }
+
         // Poll every 30 s so we catch event start/end boundaries.
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
@@ -280,6 +288,32 @@ final class AwakeController: ObservableObject {
         mode = .off
     }
 
+    // MARK: - URL commands (macawake://, the CLI, Shortcuts)
+
+    /// Runs a validated `macawake://` command. Mode commands do exactly what the panel's controls do;
+    /// holds never change the mode.
+    func perform(_ command: URLCommand) {
+        switch command {
+        case .start(let minutes):
+            startTimed(minutes: minutes)
+        case .extend(let minutes):
+            extendTimed(minutes: minutes)
+            // A URL may not push a timer more than 24 h out.
+            let cap = Date().addingTimeInterval(Double(URLCommand.maxMinutes) * 60)
+            if let until = timedUntil, until > cap { timedUntil = cap; refresh() }
+        case .stop:
+            stopTimed()
+        case .setMode(let m):
+            mode = m
+        case .hold(let pid):
+            if !holds.add(pid: pid) { NSLog("MacAwake: refused hold for pid \(pid)") }
+            refresh()
+        case .release(let pid):
+            holds.remove(pid: pid)
+            refresh()
+        }
+    }
+
     private func scheduleTimedExpiry() {
         expiryTimer?.invalidate()
         expiryTimer = nil
@@ -322,27 +356,34 @@ final class AwakeController: ObservableObject {
         awakeUntil = latest.map { window(for: $0).end }
         nextEvent = upcoming
 
-        let shouldBeAwake: Bool
-        let reason: String
+        let modeAwake: Bool
+        let modeReason: String
         switch mode {
         case .auto:
-            shouldBeAwake = latest != nil
-            reason = "Calendar event: \(latest?.title ?? "")"
+            modeAwake = latest != nil
+            modeReason = "Calendar event: \(latest?.title ?? "")"
         case .alwaysOn:
-            shouldBeAwake = true
-            reason = "MacAwake: always awake"
+            modeAwake = true
+            modeReason = "MacAwake: always awake"
         case .timed:
-            shouldBeAwake = true
-            reason = "MacAwake: awake until \(timeFormatter.string(from: timedUntil ?? now))"
+            modeAwake = true
+            modeReason = "MacAwake: awake until \(timeFormatter.string(from: timedUntil ?? now))"
         case .off:
-            shouldBeAwake = false
-            reason = ""
+            modeAwake = false
+            modeReason = ""
         }
+
+        // `macawake run` holds keep the Mac awake whatever the mode.
+        holds.prune(now: now)
+        heldNames = holds.names
+        heldAwake = !modeAwake && !heldNames.isEmpty
+        let shouldBeAwake = modeAwake || heldAwake
+        let reason = heldAwake ? "MacAwake: while \(heldNames.joined(separator: ", ")) runs" : modeReason
 
         if shouldBeAwake {
             // An event just started. If the Mac only half-woke for it (a scheduled "dark" wake),
             // count it as user activity so the display comes on and the Mac doesn't drop back to sleep.
-            if !isAwake && mode == .auto { assertion.declareUserActivity(reason: reason) }
+            if !isAwake && mode == .auto && !heldAwake { assertion.declareUserActivity(reason: reason) }
             assertion.enable(reason: reason, keepDisplayOn: keepDisplayOn)
         } else {
             assertion.disable()
@@ -450,9 +491,16 @@ final class AwakeController: ObservableObject {
     // MARK: - Menu text
 
     var menuBarSymbol: String {
+        if heldAwake { return "cup.and.saucer.fill" }
         if mode == .off { return "moon.zzz" }
         if mode == .timed { return "hourglass" }
         return isAwake ? "cup.and.saucer.fill" : "cup.and.saucer"
+    }
+
+    /// Panel subtitle while only `macawake run` holds keep the Mac awake.
+    var heldLine: String? {
+        guard heldAwake else { return nil }
+        return heldNames.count == 1 ? "While \(heldNames[0]) runs, then as before." : "While \(heldNames.count) commands run, then as before."
     }
 
     var statusLine: String {
