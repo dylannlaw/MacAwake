@@ -1,9 +1,11 @@
 # Builds MacAwake on every pull request, and on every push to main also publishes a GitHub Release
-# with MacAwake.zip. The README links to releases/latest/download/MacAwake.zip, which always points
-# at the newest build.
+# with install.sh, MacAwake.zip and its checksum. Users install with
+#   curl -fsSL https://github.com/dylannlaw/MacAwake/releases/latest/download/install.sh | bash
+# which downloads releases/latest/download/MacAwake.zip, checks it and copies the app to /Applications.
+# Files fetched by curl aren't quarantined, so the ad-hoc signed app opens without "Open Anyway".
 #
-# Signing is optional. Without the secrets below the app is ad-hoc signed (users must allow it in
-# System Settings › Privacy & Security the first time). With them it's Developer ID signed and notarized.
+# Signing is optional. Without the secrets below the app is ad-hoc signed. With them it's Developer ID
+# signed and notarized.
 #   MACOS_CERT_P12        base64 of a "Developer ID Application" .p12 export
 #   MACOS_CERT_PASSWORD   password of that .p12
 #   MACOS_SIGN_IDENTITY   e.g. "Developer ID Application: Your Name (TEAMID)"
@@ -36,6 +38,9 @@ jobs:
       APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check install script
+        run: bash -n install.sh
 
       - name: Work out version
         id: version
@@ -91,8 +96,16 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           if [ -n "${SIGN_IDENTITY:-}" ]; then signed="Developer ID signed and notarized."; else
-            signed="Ad-hoc signed: the first time, open it from System Settings › Privacy & Security › Open Anyway."; fi
-          gh release create "v${VERSION}" build/MacAwake.zip build/MacAwake.zip.sha256 \
+            signed="Ad-hoc signed. Install with the command above; a zip opened from a browser download needs System Settings › Privacy & Security › Open Anyway."; fi
+          fence='```'
+          notes="Install or update by pasting this into Terminal:
+
+          ${fence}bash
+          curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/install.sh | bash
+          ${fence}
+
+          Built from ${GITHUB_SHA::7}. Universal (Apple silicon + Intel), macOS 14 or later. ${signed}"
+          gh release create "v${VERSION}" install.sh build/MacAwake.zip build/MacAwake.zip.sha256 \
             --title "MacAwake ${VERSION}" \
-            --notes "Built from ${GITHUB_SHA::7}. Universal (Apple silicon + Intel), macOS 14 or later. ${signed}" \
+            --notes "$notes" \
             --target "$GITHUB_SHA" --latest
