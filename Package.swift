@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "MacAwake",
             path: "Sources/MacAwake"
+        ),
+        .testTarget(
+            name: "MacAwakeTests",
+            dependencies: ["MacAwake"],
+            path: "Tests/MacAwakeTests"
         )
     ]
 )

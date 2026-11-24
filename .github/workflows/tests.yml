@@ -1,0 +1,52 @@
+# Runs the unit tests on every pull request and every push to main. On main it also uploads the coverage
+# report to Codecov, which feeds the coverage badge in the README (the badge shows the main branch).
+#
+#   CODECOV_TOKEN   repository secret from codecov.io. Only used on pushes to main: pull requests from
+#                   forks get no secrets, and the upload isn't needed to run the tests.
+#
+# Security (the repo is public): triggers on `pull_request`, never `pull_request_target`; the token is passed
+# only to the upload step; third-party actions are pinned to a commit SHA, and Dependabot proposes updates.
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**/*.md", "docs/**", "Branding/*.png"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run tests with coverage
+        run: swift test --enable-code-coverage
+
+      - name: Export coverage (lcov)
+        run: |
+          bin="$(swift build --show-bin-path)"
+          xctest="$(find "$bin" -maxdepth 1 -name '*.xctest' | head -n 1)"
+          xcrun llvm-cov export -format=lcov \
+            -instr-profile "$bin/codecov/default.profdata" \
+            -ignore-filename-regex='(\.build|Tests)/' \
+            "$xctest/Contents/MacOS/$(basename "$xctest" .xctest)" > coverage.lcov
+          grep -c '^SF:' coverage.lcov
+
+      - name: Upload coverage to Codecov
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.lcov
+          fail_ci_if_error: true

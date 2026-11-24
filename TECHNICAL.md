@@ -211,6 +211,16 @@ The app icon is drawn in code: `swift Branding/make-icon.swift` writes `Resource
 
 Don't run the bare binary from `swift run`. Without the Info.plist, macOS kills it when it asks for calendar access. Always use `build.sh`.
 
+## Tests and coverage
+
+```bash
+swift test --enable-code-coverage
+```
+
+The tests in `Tests/MacAwakeTests/` use Swift Testing and cover the pure logic: `macawake://` parsing, version comparison and the download allow-list, laptop/desktop detection, the battery settings choice, the fake-power parser and watched-command name cleaning. They need the full Xcode toolchain; the Command Line Tools alone have neither XCTest nor the Swift Testing macros, so they run in CI (`.github/workflows/tests.yml`, on every pull request and push to `main`).
+
+On pushes to `main` the workflow exports the coverage as lcov and uploads it to [Codecov](https://codecov.io/gh/dylannlaw/MacAwake) with the `CODECOV_TOKEN` repository secret. The README badge shows the `main` branch. Pull requests only run the tests; the secret isn't used there.
+
 ## Releases and signing
 
 Every push to `main` that changes the app runs [`.github/workflows/release.yml`](.github/workflows/release.yml) on `macos-15`. The workflow:
@@ -444,6 +454,8 @@ MACAWAKE_FAKE_DEVICE=desktop MACAWAKE_FAKE_POWER=ac:100 build/MacAwake.app/Conte
 | `Info.plist`, `VERSION`, `build.sh`, `Package.swift` | Packaging and build |
 | `install.sh` | The curl installer, published with each release |
 | `.github/workflows/release.yml` | Builds pull requests; builds and releases pushes to `main` |
+| `.github/workflows/tests.yml` | Runs the tests on pull requests and `main`; uploads coverage to Codecov from `main` |
+| `Tests/MacAwakeTests/` | Unit tests for the pure logic |
 | `.github/CODEOWNERS`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/` | Review ownership and templates for contributors |
 | `scripts/protect-repo.sh` | Applies the GitHub settings: protects `main`, turns on security features |
 | `scripts/screenshots.sh` | Retakes every screenshot in `docs/screenshots/` from the built app with `--demo` data |
