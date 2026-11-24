@@ -43,8 +43,8 @@ final class PowerTests: XCTestCase {
     func testSelfTestTablePasses() {
         let r = batterySelfTest()
         XCTAssertEqual(r.failed, 0)
-        XCTAssertEqual(r.lines.last, "All 12 passed.")
-        XCTAssertTrue(r.lines.dropLast().allSatisfy { $0.hasPrefix("ok") })
+        XCTAssertTrue(r.lines.contains { $0.hasPrefix("All ") && $0.hasSuffix(" passed.") })
+        XCTAssertTrue(r.lines.filter { $0.hasPrefix("FAIL") }.isEmpty)
     }
 
     func testPowerSourceReadsAndNotifies() {

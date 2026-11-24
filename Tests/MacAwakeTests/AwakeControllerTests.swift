@@ -33,7 +33,7 @@ final class AwakeControllerTests: XCTestCase {
         XCTAssertEqual(c.watchGraceMinutes, 5)
         XCTAssertEqual(c.excludedCalendarIDs, [])
         XCTAssertTrue(c.hasAccess)
-        XCTAssertFalse(c.hasBattery)
+        XCTAssertFalse(c.showsLidSetting)
     }
 
     func testSettingsPersistAndReload() {
@@ -483,7 +483,7 @@ final class AwakeControllerTests: XCTestCase {
         XCTAssertNil(r.controller.lidLine)
         XCTAssertEqual(r.controller.lidStatus, .off)
         let desk = makeRig(self)
-        XCTAssertFalse(desk.controller.hasBattery)
+        XCTAssertFalse(desk.controller.showsLidSetting)
     }
 
     func testLidStartsThenActive() throws {

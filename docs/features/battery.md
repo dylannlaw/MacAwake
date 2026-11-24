@@ -34,7 +34,7 @@ Open the panel, click **Settings**, and you'll find three battery options:
 - **A timer keeps counting down while paused.** If it was set to end at 3:00 PM, it still ends at 3:00 PM.
 - Once the battery drops below your limit, MacAwake stays paused until you plug in, even if the reading goes back up a little.
 - While paused, MacAwake doesn't wake a sleeping Mac to look for new events, to save charge. It still wakes it for your next event, in case you've plugged in by then.
-- Desktop Macs don't show these settings.
+- MacAwake knows whether your Mac is a MacBook or a desktop. Desktop Macs (Mac mini, Mac Studio, iMac, Mac Pro) don't show these settings, unless they're connected to a UPS (a battery backup macOS can see). Then the settings appear as **Stop below (UPS)**, **Only on mains power** and **Pause in Low Power Mode**, and only apply during a power cut.
 - [Keep running with the lid closed](lid-closed.md) has its own, stricter limit on top: it pauses at 20%.
 
 ## Related

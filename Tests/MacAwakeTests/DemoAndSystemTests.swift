@@ -12,6 +12,7 @@ final class DemoTests: XCTestCase {
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         var hooks = AwakeController.TestHooks()
         hooks.demo = choice
+        hooks.device = .laptop
         return AwakeController(
             defaults: defaults,
             waker: WakeScheduler(requestDir: dir.appendingPathComponent("w"), daemonPlist: dir.appendingPathComponent("w.plist"),
@@ -30,7 +31,7 @@ final class DemoTests: XCTestCase {
         XCTAssertTrue(c.isAwake)
         XCTAssertEqual(c.nextEvent?.title, "Team standup")
         XCTAssertEqual(c.agenda.count, 4)
-        XCTAssertTrue(c.hasBattery)
+        XCTAssertTrue(c.showsLidSetting)
         XCTAssertNotNil(c.scheduledWake)
         XCTAssertEqual(c.lidStatus, .off)
     }

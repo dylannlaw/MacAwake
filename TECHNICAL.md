@@ -10,6 +10,7 @@ How MacAwake works under the hood, plus how to build, release and troubleshoot i
 - [Automation: URLs and the `macawake` command](#automation-urls-and-the-macawake-command)
 - [Build from source](#build-from-source)
 - [Releases and signing](#releases-and-signing)
+- [Updates](#updates)
 - [Check that it's working](#check-that-its-working)
 - [Troubleshooting](#troubleshooting)
 - [Project layout](#project-layout)
@@ -42,6 +43,7 @@ How MacAwake works under the hood, plus how to build, release and troubleshoot i
   - Rules apply only on battery or UPS power. In order: charge below **Stop below** → `batteryLow`; **Only when plugged in** → `onBattery`; **Pause in Low Power Mode** and Low Power Mode on → `lowPowerMode`.
   - Once the charge drops below the limit, it stays paused until power is connected (a latch), so readings near the limit can't make it flap. Changing the limit clears the latch.
   - A timer keeps counting down while paused. Check-in wakes are skipped while a rule blocks; event wakes are still scheduled, in case the Mac is plugged in by then.
+  - **Laptop or desktop:** `DeviceKind.current` (in `DeviceKind.swift`) is read once at launch: the device-tree `product-name` on Apple silicon ("MacBook Air (M2, 2022)", "Mac mini (M2)"), else `hw.model` on Intel ("MacBookPro16,1", "Macmini8,1"), else a lid sensor (`AppleClamshellState` on `IOPMrootDomain`) or a built-in battery means a laptop. `BatterySettingsStyle.for(_:power:)` then picks the Settings block: a laptop always gets **Battery** (even if the battery can't be read), a desktop gets a UPS-worded block only while a UPS is attached, otherwise nothing. **Keep awake with lid closed** shows on laptops only. The rules themselves don't depend on the kind: a desktop without a UPS is never on battery, so nothing blocks.
   - Code that keeps the Mac awake must check `AwakeController.batteryAllowsAwake`. The rule itself is the pure `AwakeController.pauseReason(for:stopPercent:onlyPluggedIn:respectLowPowerMode:latched:)`.
 - **Settings** are stored in `UserDefaults` under the bundle ID `local.macawake.app`.
 
@@ -102,7 +104,7 @@ IOKit power assertions (what `caffeinate` uses) can't stop clamshell sleep on ba
 - **Battery:** on battery, it pauses at or below 20%, and resumes only above 25% or on power. This floor can't be lowered.
 - **Heat:** it pauses while `ProcessInfo.thermalState` is `.serious` or `.critical`.
 
-The panel's status area shows "Lid can be closed" or the reason it's paused. The setting is hidden on Macs without a built-in battery.
+The panel's status area shows "Lid can be closed" or the reason it's paused. The setting is shown only on MacBooks (`DeviceKind`, see Battery safeguards above).
 
 **Security:** the helper reads at most 32 bytes, ignores symlinks and non-regular files, and accepts only digits for a time from now to 5 minutes ahead. The only `pmset` commands it runs are the fixed `-g`, `-a disablesleep 1` and `-a disablesleep 0`; nothing from the file is passed on.
 
@@ -121,7 +123,7 @@ The panel's status area shows "Lid can be closed" or the reason it's paused. The
 | Stay awake after | At end | Keeps awake this long after an event ends. |
 | Wake Mac from sleep for events | On | Schedules wakes. Shown once the helper is installed. |
 | Check for new events | Every 15 min | Check-in wakes while asleep (`sleepCheckMinutes`: 0, 5, 15, 30, 60). 0 = never. 5 min catches late-added events sooner but wakes the Mac 12 times an hour, which costs more battery. Shown when wake is on. |
-| Stop below | 10% | `batteryStopPercent`: 0 (Never), 10, 20, 30, 50. On battery, stop keeping awake once the charge is below this, until power is connected. Battery settings show only on Macs with a battery or UPS. |
+| Stop below | 10% | `batteryStopPercent`: 0 (Never), 10, 20, 30, 50. On battery, stop keeping awake once the charge is below this, until power is connected. Shown on MacBooks always, and on desktop Macs while a UPS is attached (worded for the UPS). |
 | Only when plugged in | Off | `onlyWhenPluggedIn`: keep awake only on the power adapter. |
 | Pause in Low Power Mode | Off | `pauseInLowPowerMode`: pause while Low Power Mode is on. Only counts on battery. |
 | Keep awake with lid closed | Off | `lidClosedAwake`. While MacAwake keeps the Mac awake, a closed lid doesn't sleep it, even on battery. Needs the lid helper. Paused at ≤ 20 % battery (resumes > 25 %) or when the Mac is hot. MacBooks only. |
@@ -129,6 +131,7 @@ The panel's status area shows "Lid can be closed" or the reason it's paused. The
 | Stay awake while apps are working | Off | `watchAppsEnabled`. Calendar mode also follows watched items. |
 | Watched apps | None | `watchedItems`: JSON array of `{kind: app\|command, id, name, rule: working\|running}`. **Add › AI agents** adds `claude`, `codex`, `gemini`, `aider`, `cursor-agent`, `opencode`. |
 | Keep awake after (watched apps) | 5 min | `watchGraceMinutes`: 1, 2, 5, 10 or 15. |
+| Check for updates | On | `checkForUpdates`. Asks GitHub for the latest release at launch and every 24 h (a failed check retries after an hour). Off: only **⋯ › Check for Updates…** checks. `dismissedUpdateVersion` holds the version hidden with **Later**. |
 | Launch at Login | Off | Registers the app with `SMAppService`. Works best from /Applications. |
 
 ## Automation: URLs and the `macawake` command
@@ -243,7 +246,7 @@ The README installs with:
 curl -fsSL https://github.com/dylannlaw/MacAwake/releases/latest/download/install.sh | bash
 ```
 
-`releases/latest/download/…` always points at the newest release, so the command never changes and also updates an existing install. [`install.sh`](install.sh):
+`releases/latest/download/…` always points at the newest release, so the command never changes and also updates an existing install. The app's own [update button](#updates) follows the same steps. [`install.sh`](install.sh):
 
 1. Checks it's macOS 14 or later.
 2. Downloads `MacAwake.zip` and `MacAwake.zip.sha256` from the same release over https only (redirects too) and checks the hash.
@@ -290,6 +293,33 @@ Without secrets, releases are ad-hoc signed. Installed with curl, they open norm
 | `MACOS_CERT_PASSWORD` | password of the .p12 |
 | `MACOS_SIGN_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` |
 | `APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD` | for `notarytool` (use an app-specific password) |
+
+## Updates
+
+The panel offers new releases and installs them in place. [`Updater.swift`](Sources/MacAwake/Updater.swift) does what `install.sh` does, from inside the app.
+
+**Checking.** `refresh()` calls `checkForUpdatesIfDue`, so there's no extra timer: one check after launch, then one every 24 hours, while **Check for updates** is on. It's a `GET https://api.github.com/repos/dylannlaw/MacAwake/releases/latest` with only a `MacAwake/<version>` user agent. The tag (`v1.0.N`) is compared with `CFBundleShortVersionString` part by part as numbers. Drafts, pre-releases and tags that aren't versions are ignored. Local builds (`1.0-dev`) don't check by themselves; **Check for Updates…** still works. `--preview-panel` copies never check or install.
+
+**Installing** (after **Update**):
+
+1. Downloads `MacAwake.zip` and `MacAwake.zip.sha256`. Only `https://github.com/dylannlaw/MacAwake/releases/download/…` URLs are accepted, and redirects must stay on https.
+2. Checks the SHA-256, unzips with `ditto`, runs `codesign --verify --strict`, and checks that the bundle ID matches and the version is the one the release named.
+3. Swaps the app with a small `sh` script: moves the old bundle aside, copies the new one in, clears `com.apple.quarantine`, then deletes the old one. If the copy fails, the old bundle is put back. If the app's folder isn't writable, the script runs through the admin password dialog (`AdminShell`).
+4. Starts a tiny `sh` that waits for this process to exit and `open`s the app, then quits.
+
+**Why no Open Anyway prompt.** Gatekeeper only stops apps with a quarantine flag. Browsers add one to downloads; `curl` and a non-sandboxed app's `URLSession` don't, unless the app sets `LSFileQuarantineEnabled`. MacAwake does neither, and the swap clears the flag anyway. As with `install.sh`, the checksum comes from the same release, so trust rests on GitHub and https. Calendar permission can still reset after an update of an ad-hoc signed build.
+
+**Testing without a release.** `MACAWAKE_UPDATE_FEED=<url>` reads a release JSON from there instead of the GitHub API and then also allows `file://` downloads. `--self-test-update <dest.app>` runs the version and URL checks, and with the feed set also the full check, download, verification and swap into `<dest.app>` (never the running app, no relaunch):
+
+```bash
+VERSION=1.0.99 ZIP=1 ./build.sh && cp build/MacAwake.zip /tmp/feed/ && (cd /tmp/feed && shasum -a 256 MacAwake.zip > MacAwake.zip.sha256)
+# /tmp/feed/release.json: {"tag_name":"v1.0.99","assets":[{"name":"MacAwake.zip","browser_download_url":"file:///tmp/feed/MacAwake.zip"},
+#                          {"name":"MacAwake.zip.sha256","browser_download_url":"file:///tmp/feed/MacAwake.zip.sha256"}]}
+VERSION=1.0.5 ./build.sh && cp -R build/MacAwake.app /tmp/target.app
+MACAWAKE_UPDATE_FEED=file:///tmp/feed/release.json build/MacAwake.app/Contents/MacOS/MacAwake --self-test-update /tmp/target.app
+```
+
+`--preview-panel --demo calendar --preview-update 1.0.53` shows the update card with no network, for screenshots.
 
 ## Check that it's working
 
@@ -395,6 +425,14 @@ Fake the power source to see the paused panel without draining a battery. `MACAW
 open -n --env MACAWAKE_FAKE_POWER=battery:8 build/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png -mode alwaysOn
 ```
 
+Fake the kind of Mac with `MACAWAKE_FAKE_DEVICE=laptop|desktop`. `--demo` counts as a laptop unless this is set, and honours `MACAWAKE_FAKE_POWER`, so a desktop on a UPS can be previewed safely:
+
+```bash
+MACAWAKE_FAKE_DEVICE=desktop MACAWAKE_FAKE_POWER=ac:100 build/MacAwake.app/Contents/MacOS/MacAwake --preview-panel --demo calendar --snapshot /tmp/panel.png -panel.showSettings YES
+```
+
+`--self-test-battery` also checks the laptop/desktop rule against sample Macs and prints what it detects for this one.
+
 ## Project layout
 
 | Path | What it is |
@@ -404,9 +442,11 @@ open -n --env MACAWAKE_FAKE_POWER=battery:8 build/MacAwake.app --args --preview-
 | `Sources/MacAwake/ProcessWatcher.swift` | Watched apps and commands: process scan and CPU sampling |
 | `Sources/MacAwake/SleepAssertion.swift` | Power assertions (the `caffeinate` part) |
 | `Sources/MacAwake/PowerSource.swift` | Battery and power-adapter state, and the battery self-test |
+| `Sources/MacAwake/DeviceKind.swift` | Laptop or desktop detection, and which battery settings to show |
 | `Sources/MacAwake/SystemPower.swift` | Wake notifications from IOKit, including dark wakes |
 | `Sources/MacAwake/WakeScheduler.swift` | Writes wake requests; installs and removes the wake helper |
 | `Sources/MacAwake/LidScheduler.swift` | Lid lease, lid helper install and removal, battery reading |
+| `Sources/MacAwake/Updater.swift` | Update check, download, verification and in-place install; the update self-test |
 | `Sources/MacAwake/AdminShell.swift` | Admin-password prompt and helper version check, shared by both helpers |
 | `Helper/wake-helper.sh` | The root helper that schedules wakes with `pmset` |
 | `Helper/lid-helper.sh` | The root helper that switches `pmset disablesleep` while a lease is valid |

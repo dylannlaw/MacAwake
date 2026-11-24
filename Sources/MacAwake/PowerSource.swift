@@ -132,6 +132,48 @@ func batterySelfTest() -> (lines: [String], failed: Int) {
         if !ok { failed += 1 }
         lines.append("\(ok ? "ok  " : "FAIL") \(name)\(ok ? "" : " — got \(String(describing: got))")")
     }
-    lines.append(failed == 0 ? "All \(cases.count) passed." : "\(failed) of \(cases.count) failed.")
+
+    // Device kind: which battery settings each kind of Mac gets.
+    let devices: [(String, DeviceKind, DeviceKind)] = [
+        ("Apple silicon MacBook Air", DeviceKind.classify(productName: "MacBook Air (M2, 2022)", model: "Mac14,2",
+                                                          hasClamshell: false, hasInternalBattery: false), .laptop),
+        ("Apple silicon Mac mini", DeviceKind.classify(productName: "Mac mini (M2)", model: "Mac14,3",
+                                                       hasClamshell: false, hasInternalBattery: true), .desktop),
+        ("Mac Studio", DeviceKind.classify(productName: "Mac Studio (2023)", model: "Mac14,13",
+                                           hasClamshell: false, hasInternalBattery: false), .desktop),
+        ("iMac", DeviceKind.classify(productName: "iMac (24-inch, M3)", model: "Mac15,4",
+                                     hasClamshell: false, hasInternalBattery: false), .desktop),
+        ("Intel MacBook Pro", DeviceKind.classify(productName: nil, model: "MacBookPro16,1",
+                                                  hasClamshell: false, hasInternalBattery: false), .laptop),
+        ("Intel Mac mini", DeviceKind.classify(productName: nil, model: "Macmini8,1",
+                                               hasClamshell: true, hasInternalBattery: false), .desktop),
+        ("unknown name, lid sensor", DeviceKind.classify(productName: nil, model: "Mac99,1",
+                                                         hasClamshell: true, hasInternalBattery: false), .laptop),
+        ("unknown name, battery", DeviceKind.classify(productName: nil, model: nil,
+                                                      hasClamshell: false, hasInternalBattery: true), .laptop),
+        ("unknown name, nothing", DeviceKind.classify(productName: nil, model: nil,
+                                                      hasClamshell: false, hasInternalBattery: false), .desktop),
+    ]
+    let styles: [(String, BatterySettingsStyle?, BatterySettingsStyle?)] = [
+        ("laptop, battery unreadable", .for(.laptop, power: s("none")), .battery),
+        ("laptop on AC", .for(.laptop, power: s("ac:80")), .battery),
+        ("desktop, no UPS", .for(.desktop, power: s("none")), nil),
+        ("desktop with UPS", .for(.desktop, power: s("ac:100")), .ups),
+    ]
+    var total = cases.count
+    for (name, got, want) in devices {
+        total += 1
+        let ok = got == want
+        if !ok { failed += 1 }
+        lines.append("\(ok ? "ok  " : "FAIL") device: \(name)\(ok ? "" : " — got \(got)")")
+    }
+    for (name, got, want) in styles {
+        total += 1
+        let ok = got == want
+        if !ok { failed += 1 }
+        lines.append("\(ok ? "ok  " : "FAIL") settings: \(name)\(ok ? "" : " — got \(String(describing: got))")")
+    }
+    lines.append("This Mac: \(DeviceKind.current.rawValue) (\(DeviceInfo.productName() ?? DeviceInfo.model() ?? "unknown"))")
+    lines.append(failed == 0 ? "All \(total) passed." : "\(failed) of \(total) failed.")
     return (lines, failed)
 }

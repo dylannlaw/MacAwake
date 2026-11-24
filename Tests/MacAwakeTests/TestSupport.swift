@@ -90,6 +90,7 @@ func makeRig(_ test: XCTestCase, calendar: Bool = true, seed: (UserDefaults) -> 
     hooks.runAlert = { _ in state.value.confirm ? .alertFirstButtonReturn : .alertSecondButtonReturn }
     hooks.openURL = { state.value.opened.append($0) }
     hooks.observe = observe
+    hooks.device = .desktop
     hooks.calendars = calendars
     hooks.requestAccess = requestAccess
     let c = AwakeController(defaults: defaults, waker: waker, lid: lid, hooks: hooks)

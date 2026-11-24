@@ -8,6 +8,7 @@ struct MacAwakeApp: App {
 
     init() {
         if CommandLine.arguments.contains("--self-test-battery") { runBatterySelfTest() }
+        if CommandLine.arguments.contains("--self-test-update") { runUpdateSelfTest() }
         // Debug: `MacAwake --preview-panel` also shows the panel in a normal window, for screenshots.
         if CommandLine.arguments.contains("--preview-panel") {
             DispatchQueue.main.async { PreviewWindow.show() }
@@ -54,6 +55,11 @@ struct PanelView: View {
                 AgendaSection(controller: controller)
             }
 
+            if controller.shownUpdate != nil || controller.updateMessage != nil {
+                UpdateCard(controller: controller)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             SettingsSection(controller: controller, expanded: $showSettings)
 
             Divider()
@@ -73,6 +79,8 @@ struct PanelView: View {
         .animation(.snappy(duration: 0.2), value: controller.mode)
         .animation(.snappy(duration: 0.2), value: pickingDuration.on)
         .animation(.snappy(duration: 0.2), value: showSettings)
+        .animation(.snappy(duration: 0.2), value: controller.shownUpdate)
+        .animation(.snappy(duration: 0.2), value: controller.updateMessage)
         .onChange(of: controller.mode) { _, m in if m == .timed { pickingDuration.on = false } }
     }
 }
@@ -151,11 +159,21 @@ private struct StatusHeader: View {
     private var subtitle: String {
         if let r = controller.pauseReason {
             var text: String
+            if !controller.device.isLaptop {
+                // A desktop only pauses on UPS power, during a power cut.
+                switch r {
+                case .batteryLow(let pct):
+                    text = (pct.map { "UPS at \($0)%. " } ?? "UPS is low. ") + "Your Mac sleeps normally until mains power is back."
+                case .onBattery: text = "On UPS power. Keeps your Mac awake again when mains power is back."
+                case .lowPowerMode: text = "Low Power Mode is on during a power cut. Turn it off to keep your Mac awake."
+                }
+            } else {
             switch r {
             case .batteryLow(let pct):
                 text = (pct.map { "Battery at \($0)%. " } ?? "Battery is low. ") + "Plug in to keep your Mac awake."
             case .onBattery: text = "On battery. Plug in to keep your Mac awake."
             case .lowPowerMode: text = "Low Power Mode is on. Plug in or turn it off to keep your Mac awake."
+            }
             }
             if controller.mode == .timed, let until = controller.timedUntil {
                 text += " Timer still ends at \(until.formatted(date: .omitted, time: .shortened))."
@@ -379,6 +397,58 @@ private struct AccessCard: View {
     }
 }
 
+// MARK: - Update
+
+/// "Update available" with Update / Later, or just a status line ("Checking…", "Up to date", an error).
+private struct UpdateCard: View {
+    @ObservedObject var controller: AwakeController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let update = controller.shownUpdate {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.blue)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("MacAwake \(update.version) is out").font(.callout.weight(.semibold))
+                        Text("You have \(Updater.currentVersion)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    if controller.updateBusy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Later") { controller.dismissUpdate() }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                        Button("Update") { controller.installUpdate() }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                    }
+                }
+                if controller.updateMessage == nil {
+                    Text("MacAwake restarts by itself. macOS may ask for calendar access again.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let message = controller.updateMessage {
+                HStack(spacing: 6) {
+                    if controller.updateBusy && controller.shownUpdate == nil { ProgressView().controlSize(.mini) }
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(controller.updateFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.blue.opacity(0.08)))
+    }
+}
+
 // MARK: - Settings
 
 private struct SettingsSection: View {
@@ -429,21 +499,9 @@ private struct SettingsSection: View {
                         .labelsHidden().fixedSize()
                     }
 
-                    if controller.powerState.hasBattery {
+                    if let style = controller.batterySettings {
                         Divider()
-                        HStack {
-                            Label("Stop below", systemImage: "battery.25").font(.callout)
-                            Spacer()
-                            Picker("", selection: $controller.batteryStopPercent) {
-                                ForEach([0, 10, 20, 30, 50], id: \.self) { p in
-                                    Text(p == 0 ? "Never" : "\(p)%").tag(p)
-                                }
-                            }
-                            .labelsHidden().fixedSize()
-                        }
-                        .help("On battery, stop keeping your Mac awake once the charge drops below this. It resumes when you plug in.")
-                        SettingToggle("Only when plugged in", "powerplug", $controller.onlyWhenPluggedIn)
-                        SettingToggle("Pause in Low Power Mode", "leaf", $controller.pauseInLowPowerMode)
+                        BatterySettings(controller: controller, style: style)
                     }
 
                     Divider()
@@ -479,9 +537,13 @@ private struct SettingsSection: View {
                         Text(err).font(.caption).foregroundStyle(.red)
                     }
 
-                    if controller.hasBattery {
+                    if controller.showsLidSetting {
                         LidSetting(controller: controller)
                     }
+
+                    Divider()
+                    SettingToggle("Check for updates", "arrow.down.circle", $controller.checkForUpdates)
+                        .help("Look for a newer MacAwake on GitHub when it starts and once a day. You choose when to install it.")
 
                     if controller.hasAccess && !controller.calendars.isEmpty {
                         DisclosureGroup {
@@ -509,6 +571,35 @@ private struct SettingsSection: View {
                 }
                 .transition(.opacity)
             }
+        }
+    }
+}
+
+/// Battery safeguards. A MacBook always gets them; a desktop only while macOS sees a UPS,
+/// with the same rules worded for a UPS.
+private struct BatterySettings: View {
+    @ObservedObject var controller: AwakeController
+    let style: BatterySettingsStyle
+
+    var body: some View {
+        let ups = style == .ups
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(ups ? "Stop below (UPS)" : "Stop below", systemImage: ups ? "powerplug.portrait" : "battery.25")
+                    .font(.callout)
+                Spacer()
+                Picker("", selection: $controller.batteryStopPercent) {
+                    ForEach([0, 10, 20, 30, 50], id: \.self) { p in
+                        Text(p == 0 ? "Never" : "\(p)%").tag(p)
+                    }
+                }
+                .labelsHidden().fixedSize()
+            }
+            .help(ups
+                  ? "During a power cut, stop keeping your Mac awake once the UPS charge drops below this. It resumes when mains power is back."
+                  : "On battery, stop keeping your Mac awake once the charge drops below this. It resumes when you plug in.")
+            SettingToggle(ups ? "Only on mains power" : "Only when plugged in", "powerplug", $controller.onlyWhenPluggedIn)
+            SettingToggle("Pause in Low Power Mode", "leaf", $controller.pauseInLowPowerMode)
         }
     }
 }
@@ -694,29 +785,31 @@ private struct Footer: View {
                 .toggleStyle(.checkbox)
                 .font(.caption)
             Spacer()
-            if controller.wakeHelperInstalled || controller.lidHelperInstalled {
-                Menu {
-                    if controller.helpersNeedUpdate {
-                        Button("Update Helpers…") { controller.updateHelpers() }
-                            .disabled(controller.wakeHelperBusy || controller.lidHelperBusy)
-                        Divider()
-                    }
-                    if controller.wakeHelperInstalled {
-                        Button("Remove Wake Helper…") { controller.uninstallWakeHelper() }
-                            .disabled(controller.wakeHelperBusy)
-                    }
-                    if controller.lidHelperInstalled {
-                        Button("Remove Lid-Closed Helper…") { controller.uninstallLidHelper() }
-                            .disabled(controller.lidHelperBusy)
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+            Menu {
+                Text("MacAwake \(Updater.currentVersion)")
+                Button("Check for Updates…") { controller.checkForUpdatesNow() }
+                    .disabled(controller.updateBusy)
+                if controller.wakeHelperInstalled || controller.lidHelperInstalled { Divider() }
+                if controller.helpersNeedUpdate {
+                    Button("Update Helpers…") { controller.updateHelpers() }
+                        .disabled(controller.wakeHelperBusy || controller.lidHelperBusy)
+                    Divider()
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("More")
+                if controller.wakeHelperInstalled {
+                    Button("Remove Wake Helper…") { controller.uninstallWakeHelper() }
+                        .disabled(controller.wakeHelperBusy)
+                }
+                if controller.lidHelperInstalled {
+                    Button("Remove Lid-Closed Helper…") { controller.uninstallLidHelper() }
+                        .disabled(controller.lidHelperBusy)
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More")
             Button {
                 controller.refresh()
             } label: {
