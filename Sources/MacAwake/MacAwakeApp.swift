@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct MacAwakeApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var controller = AwakeController.shared
 
     init() {
@@ -122,6 +123,7 @@ private struct StatusHeader: View {
     }
 
     private var tint: Color {
+        if controller.heldAwake { return .green }
         switch controller.mode {
         case .off: return .secondary
         case .timed: return .indigo
@@ -131,6 +133,7 @@ private struct StatusHeader: View {
     }
 
     private var title: String {
+        if controller.heldAwake { return "Awake for a command" }
         switch controller.mode {
         case .off: return "Sleeping normally"
         case .alwaysOn: return "Staying awake"
@@ -142,6 +145,7 @@ private struct StatusHeader: View {
     }
 
     private var subtitle: String {
+        if let held = controller.heldLine { return held }
         switch controller.mode {
         case .off: return "MacAwake is off. Your Mac sleeps as usual."
         case .alwaysOn: return "Until you change the mode."

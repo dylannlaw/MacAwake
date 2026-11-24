@@ -26,6 +26,7 @@
 - [What it can do](#what-it-can-do)
 - [Get started](#get-started)
 - [Using MacAwake](#using-macawake)
+- [Control it from Shortcuts or scripts](#control-it-from-shortcuts-or-scripts)
 - [Good to know](#good-to-know)
 - [Contributing](#contributing)
 - [Technical details](#technical-details)
@@ -51,6 +52,8 @@ Most keep-awake apps only give you an on/off switch. You either have to remember
 ⏰ **Wake your Mac for your next event.** If your Mac has gone to sleep, MacAwake can wake it up just before your next event starts.
 
 🌙 **Off.** Your Mac sleeps as usual.
+
+🤖 **Stay awake while a job runs.** Start a long task from the Terminal or Shortcuts, and MacAwake keeps your Mac awake until it finishes, then goes back to what it was doing.
 
 ## Get started
 
@@ -111,12 +114,21 @@ Click the coffee cup in the menu bar to open the panel.
 - ⏳: timer running
 - 🌙: off
 
+## Control it from Shortcuts or scripts
+
+You can start a timer, add time, stop or switch mode without opening the panel. This is handy for automations and for AI tools that run on their own.
+
+- **Shortcuts:** add an **Open URLs** action with a MacAwake link. For example, *macawake://start?minutes=90* keeps your Mac awake for 90 minutes, and *macawake://off* turns MacAwake off. The other links are *extend*, *stop*, *always* and *calendar*.
+- **Terminal:** MacAwake includes a small Terminal command. Start a long job through it, such as an AI coding assistant, and your Mac stays awake exactly as long as the job runs.
+
+The full list of links and commands, and how to set up the command, are in the [Technical guide](TECHNICAL.md#automation-urls-and-the-macawake-command).
+
 ## Good to know
 
 - **Which calendars?** Any calendar that appears in Apple's Calendar app, including Google, Outlook and Exchange. Add the account in **System Settings › Internet Accounts**.
 - **Declined or cancelled events** never keep your Mac awake.
 - **Watched apps** only count while the Mac is awake: they can't wake a sleeping Mac, and an AI agent left open but idle doesn't keep it awake when set to **While working**.
-- **Closing a MacBook's lid** puts it to sleep as usual, unless you've turned on **Keep awake with lid closed**. With that on, the Mac only stays awake with the lid closed while MacAwake is keeping it awake (during an event, while a watched app is working, in Always mode or while a timer runs). It goes back to normal as soon as MacAwake stops, and if MacAwake quits or crashes, normal sleep comes back by itself within a few minutes.
+- **Closing a MacBook's lid** puts it to sleep as usual, unless you've turned on **Keep awake with lid closed**. With that on, the Mac only stays awake with the lid closed while MacAwake is keeping it awake (for example during an event, while a watched app or command is working, in Always mode or while a timer runs). It goes back to normal as soon as MacAwake stops, and if MacAwake quits or crashes, normal sleep comes back by itself within a few minutes.
 - **Don't put your Mac in a bag or sleeve** while it's awake with the lid closed: it can overheat. MacAwake pauses lid-closed mode if the Mac gets too hot, or if the battery drops to 20% (it starts again above 25% or when you plug in). While it's on, choosing **Sleep** from the Apple menu won't put the Mac to sleep.
 - **New events while your Mac sleeps:** if you add an event from your phone while the Mac is asleep, MacAwake still catches it. Every 15 minutes (you can change this), it briefly wakes the Mac in the background with the screen off, checks your calendar, and goes back to sleep. So an event added less than 15 minutes before it starts might be missed. Checking works best when the Mac is plugged in; on battery, macOS may stop the check before your calendar has synced.
 - **Quitting MacAwake** lets your Mac sleep normally again and cancels any planned wake-up.
