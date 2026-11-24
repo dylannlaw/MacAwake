@@ -28,6 +28,7 @@ The build must finish with no errors. Then check what you changed:
 - UI: run `build/MacAwake.app/Contents/MacOS/MacAwake --preview-panel --demo calendar --snapshot <scratch>/panel.png` and look at the PNG, then stop the process.
   `--demo` shows made-up events and keeps its settings apart, so it never touches the user's calendar, settings or wake schedule. Use `--demo timer`, `always` or `off` for other modes, and add `-panel.showSettings YES` to open Settings.
   Without `--demo`, the preview runs as a second copy of the app and writes the same wake request as the installed app.
+- Logic: run `./scripts/coverage.sh` (needs Xcode). Add or update tests for what you changed; coverage of the app logic must stay at 95% or more. Tests never touch the real calendar, settings, wake schedule or admin prompts: use the hooks in `Tests/MacAwakeTests/TestSupport.swift`.
 - App behaviour: install the built app, then check `pmset -g assertions | grep -i calendar` during an event.
 - Wake helper: test `Helper/wake-helper.sh` without root by pointing `MACAWAKE_PMSET` at a fake `pmset` script that logs its arguments.
   Pass a request file and a state file in a temp folder.

@@ -30,10 +30,7 @@ final class PowerSource {
     init(onChange: @escaping () -> Void) {
         self.onChange = onChange
         let context = Unmanaged.passUnretained(self).toOpaque()
-        if let src = IOPSNotificationCreateRunLoopSource({ context in
-            guard let context else { return }
-            Unmanaged<PowerSource>.fromOpaque(context).takeUnretainedValue().onChange()
-        }, context)?.takeRetainedValue() {
+        if let src = IOPSNotificationCreateRunLoopSource({ context in PowerSource.deliver(context) }, context)?.takeRetainedValue() {
             CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
             runLoopSource = src
         }
@@ -47,18 +44,29 @@ final class PowerSource {
         if let lpmObserver { NotificationCenter.default.removeObserver(lpmObserver) }
     }
 
+    /// Passes an IOKit callback on to the `PowerSource` it was registered for.
+    static func deliver(_ context: UnsafeMutableRawPointer?) {
+        guard let context else { return }
+        Unmanaged<PowerSource>.fromOpaque(context).takeUnretainedValue().onChange()
+    }
+
     func current() -> PowerState {
         if let fake { return fake }
-        var state = PowerState(lowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled)
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return state }
-        if let providing = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? {
-            state.onBattery = providing != kIOPMACPowerKey
-        }
+        let lpm = ProcessInfo.processInfo.isLowPowerModeEnabled
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return PowerState(lowPowerMode: lpm) }
+        let providing = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String?
         let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] ?? []
+        let descriptions = list.compactMap { IOPSGetPowerSourceDescription(info, $0)?.takeUnretainedValue() as? [String: Any] }
+        return Self.state(providing: providing, descriptions: descriptions, lowPowerMode: lpm)
+    }
+
+    /// Builds the `PowerState` from what IOKit reports: the providing source and each source's description.
+    static func state(providing: String?, descriptions: [[String: Any]], lowPowerMode: Bool) -> PowerState {
+        var state = PowerState(lowPowerMode: lowPowerMode)
+        if let providing { state.onBattery = providing != kIOPMACPowerKey }
         var battery: Int?, ups: Int?
-        for ps in list {
-            guard let d = IOPSGetPowerSourceDescription(info, ps)?.takeUnretainedValue() as? [String: Any],
-                  d[kIOPSIsPresentKey] as? Bool ?? true else { continue }
+        for d in descriptions {
+            guard d[kIOPSIsPresentKey] as? Bool ?? true else { continue }
             let type = d[kIOPSTypeKey] as? String
             guard type == kIOPSInternalBatteryType || type == kIOPSUPSType else { continue }
             state.hasBattery = true
@@ -92,6 +100,13 @@ final class PowerSource {
 /// Debug: `MacAwake --self-test-battery` checks the safeguard rule against a table, prints the result
 /// and exits (status 1 on any failure). Not reachable from the UI.
 func runBatterySelfTest() -> Never {
+    let result = batterySelfTest()
+    result.lines.forEach { print($0) }
+    exit(result.failed == 0 ? 0 : 1)
+}
+
+/// The self-test's table run, as text lines plus the number of failures.
+func batterySelfTest() -> (lines: [String], failed: Int) {
     func s(_ fake: String) -> PowerState { PowerSource.parseFake(fake)! }
     let cases: [(String, PowerState, Int, Bool, Bool, Bool, PauseReason?)] = [
         // name, power, stop%, onlyPluggedIn, respectLPM, latched, expected
@@ -109,12 +124,13 @@ func runBatterySelfTest() -> Never {
         ("unknown percent: no level block", s("battery"), 10, false, false, false, nil),
     ]
     var failed = 0
+    var lines: [String] = []
     for (name, p, stop, plugged, lpm, latched, want) in cases {
         let got = AwakeController.pauseReason(for: p, stopPercent: stop, onlyPluggedIn: plugged,
                                               respectLowPowerMode: lpm, latched: latched)
         let ok = got == want
         if !ok { failed += 1 }
-        print("\(ok ? "ok  " : "FAIL") \(name)\(ok ? "" : " — got \(String(describing: got))")")
+        lines.append("\(ok ? "ok  " : "FAIL") \(name)\(ok ? "" : " — got \(String(describing: got))")")
     }
 
     // Device kind: which battery settings each kind of Mac gets.
@@ -149,15 +165,15 @@ func runBatterySelfTest() -> Never {
         total += 1
         let ok = got == want
         if !ok { failed += 1 }
-        print("\(ok ? "ok  " : "FAIL") device: \(name)\(ok ? "" : " — got \(got)")")
+        lines.append("\(ok ? "ok  " : "FAIL") device: \(name)\(ok ? "" : " — got \(got)")")
     }
     for (name, got, want) in styles {
         total += 1
         let ok = got == want
         if !ok { failed += 1 }
-        print("\(ok ? "ok  " : "FAIL") settings: \(name)\(ok ? "" : " — got \(String(describing: got))")")
+        lines.append("\(ok ? "ok  " : "FAIL") settings: \(name)\(ok ? "" : " — got \(String(describing: got))")")
     }
-    print("This Mac: \(DeviceKind.current.rawValue) (\(DeviceInfo.productName() ?? DeviceInfo.model() ?? "unknown"))")
-    print(failed == 0 ? "All \(total) passed." : "\(failed) of \(total) failed.")
-    exit(failed == 0 ? 0 : 1)
+    lines.append("This Mac: \(DeviceKind.current.rawValue) (\(DeviceInfo.productName() ?? DeviceInfo.model() ?? "unknown"))")
+    lines.append(failed == 0 ? "All \(total) passed." : "\(failed) of \(total) failed.")
+    return (lines, failed)
 }

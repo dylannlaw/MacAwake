@@ -1,38 +1,31 @@
-# Unit tests and coverage badge
+# Codecov coverage badge
 
 ## Summary
 
-The project had no tests, so there was no coverage to show. This adds a first set of unit tests, a `Tests` workflow that runs them, coverage uploads to Codecov from `main`, and a coverage badge in the README.
+The Tests workflow now uploads `main`'s coverage to Codecov, and the README shows a coverage badge for `main`.
 
 ## Why
 
-Request: show test coverage of the `main` branch as a README badge. A badge needs a source, and nothing measured coverage.
+Request: a README badge with the test coverage of the `main` branch.
 
 ## Design
 
-- **Test target:** `MacAwakeTests` in `Package.swift` imports the existing executable target with `@testable import`, so no code moved and no `public` modifiers were added. Tests cover pure logic only: `URLCommand`, `Updater` version and URL rules, `DeviceKind` / `BatterySettingsStyle`, `PowerSource.parseFake`, and `WatchedItem.cleanCommandName`. The UI, helper installers and process scanning aren't covered.
-- **Swift Testing, not XCTest:** same macro-free simplicity either way, but Swift Testing needs no extra imports. Neither works with the Command Line Tools alone (see Verified), so the tests run in CI.
-- **Workflow:** a separate `tests.yml`, so `release.yml` and its release gating are untouched. Pull requests run the tests; only pushes to `main` upload coverage, because the token isn't available to fork PRs. The Codecov action is pinned to a commit SHA, as the repo requires.
-- **Badge:** Codecov's `main` badge in the README's badge row. The README stays plain-language; the details are in `TECHNICAL.md`.
+- This change first added its own tests. While it was open, [Unit tests and code-only releases](2026-11-24-unit-tests.md) landed on `main` with a full suite and a 95% gate, so those duplicates were dropped and only the badge and upload remain.
+- `tests.yml` gets two steps after `scripts/coverage.sh`, on pushes to `main` only: export lcov with `llvm-cov` from the profile `swift test` already wrote, then upload with the Codecov action (pinned to a commit SHA). The `CODECOV_TOKEN` secret is passed to the upload step alone; pull requests never use it.
+- The badge sits in the README badge row and points at Codecov's `main` branch.
 
-**Options considered and not picked**
-- *A self-built badge (shields.io endpoint or gist):* more moving parts than Codecov for the same result.
-- *Moving all code into a library target:* a bigger refactor with no benefit for this change.
+**Not picked:** a self-built badge (shields.io endpoint or gist): more moving parts than Codecov for the same result.
 
 ## Files
 
-- `Package.swift`: test target.
-- `Tests/MacAwakeTests/*.swift`: new tests.
-- `.github/workflows/tests.yml`: new workflow.
-- `README.md`: badge. `TECHNICAL.md`: "Tests and coverage" section and layout rows.
+- `.github/workflows/tests.yml`: export and upload steps.
+- `README.md`: badge. `TECHNICAL.md`: Codecov note in "Unit tests" and the layout table.
 
 ## Verified / not verified
 
-- Verified: every assertion passes. This Mac has only the Command Line Tools (no XCTest, no Swift Testing macros), so I ran the same assertions through a temporary harness built from the app's sources, then removed it. `swift test` itself was not run here.
-- Not verified: the `tests.yml` run on GitHub, the llvm-cov export step, and the Codecov upload. The badge shows "unknown" until the first push to `main` uploads a report. The workflow YAML parses.
+- Workflow YAML parses. No Swift code changed.
+- Not verified: the lcov export and the Codecov upload, which only run on a push to `main`. The badge shows "unknown" until the first upload. Note the badge figure is all of `Sources` including `MacAwakeApp.swift`, while the 95% gate leaves that file out, so the two numbers differ.
 
 ## Follow-ups
 
-- Check the first `Tests` run after merge and fix the export path if it differs.
-- Consider making the `Tests` check required in `scripts/protect-repo.sh`.
-- Move more logic out of `AwakeController` so it can be tested.
+- Check the first `main` run and fix the export path if it differs.

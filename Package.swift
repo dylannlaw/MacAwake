@@ -13,6 +13,6 @@ let package = Package(
             name: "MacAwakeTests",
             dependencies: ["MacAwake"],
             path: "Tests/MacAwakeTests"
-        )
+        ),
     ]
 )

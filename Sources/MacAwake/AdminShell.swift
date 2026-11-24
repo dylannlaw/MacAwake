@@ -3,15 +3,30 @@ import Foundation
 /// Runs shell commands as root through the standard macOS admin password dialog.
 /// Shared by the wake helper and the lid helper installers.
 enum AdminShell {
+    /// What `run` does. Tests replace it so nothing ever asks for an admin password.
+    nonisolated(unsafe) static var runner: (String, String, @escaping (Bool) -> Void) -> Void = runWithOsascript
+    /// The program that shows the dialog. Tests point it at a stand-in script.
+    nonisolated(unsafe) static var osascriptPath = "/usr/bin/osascript"
+
     static func run(_ command: String, prompt: String, completion: @escaping (Bool) -> Void) {
+        runner(command, prompt, completion)
+    }
+
+    /// The AppleScript that runs `command` as root, with `\` and `"` escaped for the script string.
+    static func appleScript(for command: String, prompt: String) -> String {
         let escaped = command
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-        let apple = "do shell script \"\(escaped)\" with prompt \"\(prompt)\" with administrator privileges"
+        return "do shell script \"\(escaped)\" with prompt \"\(prompt)\" with administrator privileges"
+    }
+
+    static func runWithOsascript(_ command: String, prompt: String, completion: @escaping (Bool) -> Void) {
+        let apple = appleScript(for: command, prompt: prompt)
+        let osascript = osascriptPath
 
         DispatchQueue.global(qos: .userInitiated).async {
             let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            p.executableURL = URL(fileURLWithPath: osascript)
             p.arguments = ["-e", apple]
             let err = Pipe()
             p.standardError = err

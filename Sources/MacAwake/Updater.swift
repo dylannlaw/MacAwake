@@ -27,7 +27,7 @@ struct UpdateError: LocalizedError {
 enum Updater {
     static let repo = "dylannlaw/MacAwake"
 
-    private static let feedOverride = ProcessInfo.processInfo.environment["MACAWAKE_UPDATE_FEED"]
+    nonisolated(unsafe) static var feedOverride = ProcessInfo.processInfo.environment["MACAWAKE_UPDATE_FEED"]
         .flatMap(URL.init(string:))
     static var isTesting: Bool { feedOverride != nil }
     private static var feedURL: URL {
@@ -206,6 +206,10 @@ enum Updater {
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = ["-c", "while kill -0 \"$1\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$2\"",
                        "sh", String(ProcessInfo.processInfo.processIdentifier), app.path]
+        // Not the parent's pipes: a waiting shell holding them open can stall whoever reads our output.
+        p.standardInput = FileHandle.nullDevice
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
         try? p.run()
     }
 
@@ -245,10 +249,24 @@ enum Updater {
 /// With `MACAWAKE_UPDATE_FEED` set and a destination, it also runs the real check, download, checks and
 /// swap into that destination (never the running app, and no relaunch). Exits 1 on any failure.
 func runUpdateSelfTest() -> Never {
+    let done = DispatchSemaphore(value: 0)
+    var result: (lines: [String], failed: Int) = ([], 1)
+    Task.detached {
+        result = await updateSelfTest(arguments: CommandLine.arguments)
+        done.signal()
+    }
+    done.wait()
+    result.lines.forEach { print($0) }
+    exit(result.failed == 0 ? 0 : 1)
+}
+
+/// The self-test itself, as text lines plus the number of failures.
+func updateSelfTest(arguments args: [String]) async -> (lines: [String], failed: Int) {
     var failed = 0
+    var lines: [String] = []
     func check(_ name: String, _ ok: Bool) {
         if !ok { failed += 1 }
-        print("\(ok ? "ok  " : "FAIL") \(name)")
+        lines.append("\(ok ? "ok  " : "FAIL") \(name)")
     }
     check("1.0.42 > 1.0.41", Updater.isNewer("1.0.42", than: "1.0.41"))
     check("1.0.100 > 1.0.99 (numeric, not text)", Updater.isNewer("1.0.100", than: "1.0.99"))
@@ -265,28 +283,23 @@ func runUpdateSelfTest() -> Never {
     check("other repo refused", !Updater.isAllowedDownload(URL(string: "https://github.com/someone/MacAwake/releases/download/v1/MacAwake.zip")!))
     check("other host refused", !Updater.isAllowedDownload(URL(string: "https://example.com/\(Updater.repo)/releases/download/v1/MacAwake.zip")!))
 
-    let args = CommandLine.arguments
     if Updater.isTesting, let i = args.firstIndex(of: "--self-test-update"), i + 1 < args.count {
         let dest = URL(fileURLWithPath: args[i + 1])
-        let done = DispatchSemaphore(value: 0)
-        Task.detached {
-            do {
-                guard let update = try await Updater.checkLatest() else {
-                    print("FAIL feed: no newer version than \(Updater.currentVersion)"); failed += 1; done.signal(); return
-                }
-                print("ok   feed: \(update.version) is newer than \(Updater.currentVersion)")
-                let app = try await Updater.download(update)
-                print("ok   downloaded and verified \(app.path)")
-                let status = try await Updater.run("/bin/sh", ["-c", Updater.swapScript(newApp: app, dest: dest)])
-                check("swapped into \(dest.path)", status == 0)
-                Updater.cleanUp(app)
-            } catch {
-                print("FAIL \(error.localizedDescription)"); failed += 1
+        do {
+            guard let update = try await Updater.checkLatest() else {
+                lines.append("FAIL feed: no newer version than \(Updater.currentVersion)"); failed += 1
+                return (lines, failed)
             }
-            done.signal()
+            lines.append("ok   feed: \(update.version) is newer than \(Updater.currentVersion)")
+            let app = try await Updater.download(update)
+            lines.append("ok   downloaded and verified \(app.path)")
+            let status = try await Updater.run("/bin/sh", ["-c", Updater.swapScript(newApp: app, dest: dest)])
+            check("swapped into \(dest.path)", status == 0)
+            Updater.cleanUp(app)
+        } catch {
+            lines.append("FAIL \(error.localizedDescription)"); failed += 1
         }
-        done.wait()
     }
-    print(failed == 0 ? "All passed." : "\(failed) failed.")
-    exit(failed == 0 ? 0 : 1)
+    lines.append(failed == 0 ? "All passed." : "\(failed) failed.")
+    return (lines, failed)
 }

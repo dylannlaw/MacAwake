@@ -82,7 +82,7 @@ final class AwakeController: ObservableObject {
     @Published private(set) var lidHelperError: String?
     @Published private(set) var lidStatus: LidStatus = .off
     /// MacBook or desktop Mac, read once at launch. Decides which battery and lid settings are offered.
-    let device = DeviceKind.current
+    let device: DeviceKind
     /// Shows "Keep awake with lid closed": MacBooks only, plus previews of a lid status.
     @Published private(set) var showsLidSetting = false
     /// Which battery settings the panel shows: always on a MacBook, on a desktop only while a UPS is attached.
@@ -185,14 +185,18 @@ final class AwakeController: ObservableObject {
     // MARK: - Internals
 
     /// `--preview-panel --demo`: sample events and settings, for screenshots. See `Demo` below.
-    static let isDemo = CommandLine.arguments.contains("--preview-panel") && CommandLine.arguments.contains("--demo")
+    static let launchedAsDemo = CommandLine.arguments.contains("--preview-panel") && CommandLine.arguments.contains("--demo")
 
     // A demo keeps its settings apart, so it never changes the real ones.
-    private let defaults = isDemo ? UserDefaults(suiteName: Demo.suite)! : UserDefaults.standard
-    private let store = EKEventStore()
+    private let defaults: UserDefaults
+    let store = EKEventStore()
     private let assertion = SleepAssertion()
-    private let waker = WakeScheduler()
-    private let lid = LidScheduler()
+    private let waker: WakeScheduler
+    private let lid: LidScheduler
+    private let hooks: TestHooks?
+    /// True for `--preview-panel --demo`; tests can also ask for a demo state through the hooks.
+    private let isDemo: Bool
+    private let demoChoice: String
     private var powerWatcher: PowerSourceWatcher?
     /// Set when the lid hold paused for a low battery; cleared above `lidBatteryResume` or on power.
     private var lidBatteryLatched = false
@@ -240,8 +244,47 @@ final class AwakeController: ObservableObject {
         return f
     }()
 
-    init() {
-        if Self.isDemo { Demo.resetDefaults() }
+    /// Stand-ins for the parts of the Mac the unit tests can't (or must not) touch: with them the controller
+    /// runs without observers, timers, calendar permission prompts or dialogs. See `Tests/`.
+    struct TestHooks {
+        /// Calendar events to use. Setting it also counts as having calendar access.
+        var events: ((Date) -> [EKEvent])?
+        var power: () -> PowerState = { PowerState() }
+        var lidBattery: () -> LidBattery = { LidBattery(hasBattery: false, onBattery: false, percent: nil) }
+        var thermal: () -> ProcessInfo.ThermalState = { .nominal }
+        /// Answer to the lid warning alert (replaces showing it). The alert is built either way.
+        var runAlert: ((NSAlert) -> NSApplication.ModalResponse)?
+        /// Calendars to read events from, instead of the system's.
+        var calendars: [EKCalendar]?
+        var openURL: (URL) -> Void = { _ in }
+        /// Also register the system observers and timers (for the tests that post notifications).
+        var observe = false
+        /// Run the real start-up with this calendar permission, instead of the quiet test start.
+        var authorization: EKAuthorizationStatus?
+        /// Where an update would be installed, instead of the running app.
+        var installDest: URL?
+        /// What happens once an update is in place (really: relaunch and quit).
+        var relaunch: ((URL) -> Void)?
+        /// Answer to "is there a newer version?", instead of asking GitHub.
+        var checkLatest: (() async throws -> AvailableUpdate?)?
+        /// Pretend to be a MacBook or a desktop, instead of reading this Mac.
+        var device: DeviceKind?
+        /// Answer to the calendar permission request, instead of asking.
+        var requestAccess: (() async throws -> Bool)?
+        /// Run as the screenshot demo in this state (`calendar`, `always`, `timer`, `off`, `apps`, `run`, `lid`, `battery`).
+        var demo: String?
+    }
+
+    init(defaults suite: UserDefaults? = nil, waker: WakeScheduler = WakeScheduler(), lid: LidScheduler = LidScheduler(),
+         hooks: TestHooks? = nil) {
+        isDemo = Self.launchedAsDemo || hooks?.demo != nil
+        device = hooks?.device ?? DeviceKind.current
+        demoChoice = hooks?.demo ?? Demo.choice
+        self.defaults = suite ?? (Self.launchedAsDemo ? UserDefaults(suiteName: Demo.suite)! : UserDefaults.standard)
+        self.waker = waker
+        self.lid = lid
+        self.hooks = hooks
+        if isDemo { Demo.resetDefaults(choice: demoChoice, in: defaults) }
         let savedMode = Mode(rawValue: defaults.string(forKey: "mode") ?? "") ?? .auto
         let savedUntil = defaults.double(forKey: "timedUntil")
         let until = savedUntil > 0 ? Date(timeIntervalSince1970: savedUntil) : nil
@@ -277,7 +320,14 @@ final class AwakeController: ObservableObject {
         helpersNeedUpdate = waker.helperNeedsUpdate || lid.helperNeedsUpdate
 
         // A demo runs beside the real app: no timers, power assertions or wake requests.
-        if Self.isDemo { startDemo(); return }
+        if isDemo { startDemo(); return }
+        // Under test: no observers, timers or permission prompts. The test calls `refresh()` itself.
+        if let hooks, hooks.authorization == nil {
+            hasAccess = hooks.events != nil
+            if hooks.observe { startObserving() }
+            scheduleTimedExpiry()
+            return
+        }
 
         noNap = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiatedAllowingIdleSystemSleep],
@@ -286,7 +336,7 @@ final class AwakeController: ObservableObject {
         startObserving()
         scheduleTimedExpiry()   // didSet doesn't run during init
 
-        switch EKEventStore.authorizationStatus(for: .event) {
+        switch hooks?.authorization ?? EKEventStore.authorizationStatus(for: .event) {
         case .fullAccess:
             hasAccess = true
             reloadCalendars()
@@ -299,12 +349,18 @@ final class AwakeController: ObservableObject {
         }
     }
 
+    /// How often the calendar is looked at, and how long after a check-in wake before looking again.
+    /// Variables only so tests needn't wait.
+    nonisolated(unsafe) static var pollSeconds: TimeInterval = 30
+    nonisolated(unsafe) static var checkInSeconds: TimeInterval = 40
+
     // MARK: - Calendar access
 
     func requestAccess() {
         Task {
             do {
-                hasAccess = try await store.requestFullAccessToEvents()
+                if let ask = hooks?.requestAccess { hasAccess = try await ask() }
+                else { hasAccess = try await store.requestFullAccessToEvents() }
             } catch {
                 NSLog("MacAwake: calendar access error: \(error)")
                 hasAccess = false
@@ -317,14 +373,14 @@ final class AwakeController: ObservableObject {
 
     func openPrivacySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
-            NSWorkspace.shared.open(url)
+            if let hooks { hooks.openURL(url) } else { NSWorkspace.shared.open(url) }
         }
     }
 
     private func reloadCalendars() {
         guard hasAccess else { calendars = []; return }
-        calendars = store.calendars(for: .event).sorted { a, b in
-            let bySource = a.source.title.localizedCaseInsensitiveCompare(b.source.title)
+        calendars = (hooks?.calendars ?? store.calendars(for: .event)).sorted { a, b in
+            let bySource = (a.source?.title ?? "").localizedCaseInsensitiveCompare(b.source?.title ?? "")
             if bySource != .orderedSame { return bySource == .orderedAscending }
             return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
         }
@@ -347,7 +403,7 @@ final class AwakeController: ObservableObject {
         holds.onChange = { [weak self] in self?.refresh() }
 
         // Poll every 30 s so we catch event start/end boundaries.
-        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: Self.pollSeconds, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
         timer?.tolerance = 5
@@ -420,13 +476,13 @@ final class AwakeController: ObservableObject {
     /// The Mac just powered on, possibly only in a dark wake for a check-in. Keep it up for a minute,
     /// ask the calendar to sync, and look again once it has had time to. `EKEventStoreChanged` also
     /// refreshes as soon as anything new arrives; `refresh()` then schedules the next wake.
-    private func handlePowerOn() {
+    func handlePowerOn() {
         guard mode == .auto, wakeForEvents, wakeHelperInstalled, hasAccess else { return refresh() }
         assertion.holdForCheckIn(seconds: 60)
         store.refreshSourcesIfNecessary()
         refresh()
         checkInTimer?.invalidate()
-        checkInTimer = Timer.scheduledTimer(withTimeInterval: 40, repeats: false) { [weak self] _ in
+        checkInTimer = Timer.scheduledTimer(withTimeInterval: Self.checkInSeconds, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         }
     }
@@ -506,7 +562,7 @@ final class AwakeController: ObservableObject {
         var upcoming: EKEvent?
 
         if hasAccess {
-            let events = Self.isDemo ? demoEvents : relevantEvents(around: now)
+            let events = isDemo ? demoEvents : relevantEvents(around: now)
             active = events.filter { window(for: $0).contains(now) }
             upcoming = events.first { window(for: $0).start > now }
             agenda = Array(events.filter { $0.endDate > now }.prefix(4))
@@ -522,7 +578,7 @@ final class AwakeController: ObservableObject {
 
         // Watched apps and commands (Calendar mode only), with a grace period after the last activity.
         let watching = mode == .auto && watchAppsEnabled && !watchedItems.isEmpty
-        let working = watching ? (Self.isDemo ? demoWorking : watcher.active(watchedItems, now: now)) : []
+        let working = watching ? (isDemo ? demoWorking : watcher.active(watchedItems, now: now)) : []
         if !working.isEmpty {
             lastWatchedActivity = now
             if recentWatched != working { recentWatched = working }
@@ -556,12 +612,12 @@ final class AwakeController: ObservableObject {
 
         // `macawake run` holds keep the Mac awake whatever the mode.
         holds.prune(now: now)
-        heldNames = Self.isDemo ? demoHeld : holds.names
+        heldNames = isDemo ? demoHeld : holds.names
         heldAwake = !modeAwake && !heldNames.isEmpty
         let shouldBeAwake = modeAwake || heldAwake
         let reason = heldAwake ? "MacAwake: while \(heldNames.joined(separator: ", ")) runs" : modeReason
 
-        if Self.isDemo {
+        if isDemo {
             // The real safeguard rule on made-up power; the lid shows on as if its helper had acted.
             // `MACAWAKE_FAKE_POWER` overrides it (e.g. a desktop on a UPS); a desktop demo has no battery by default.
             let power = PowerSource.parseFake(ProcessInfo.processInfo.environment["MACAWAKE_FAKE_POWER"])
@@ -575,7 +631,7 @@ final class AwakeController: ObservableObject {
         }
 
         // Battery safeguards veto keeping awake in every mode; the mode itself is left as it is.
-        powerState = powerSource?.current() ?? PowerState()
+        powerState = hooks?.power() ?? powerSource?.current() ?? PowerState()
         safeguard = evaluateSafeguards(powerState)
         pauseReason = shouldBeAwake ? safeguard : nil
         let holdAwake = shouldBeAwake && safeguard == nil
@@ -629,7 +685,7 @@ final class AwakeController: ObservableObject {
 
     /// Hangs off `refresh()`: checks once after launch, then once a day. A failed check waits an hour.
     private func checkForUpdatesIfDue(now: Date) {
-        guard checkForUpdates, !Self.isPreview, !updateBusy, !Updater.isDevBuild || Updater.isTesting else { return }
+        guard hooks == nil, checkForUpdates, !Self.isPreview, !updateBusy, !Updater.isDevBuild || Updater.isTesting else { return }
         if let next = nextUpdateAttempt, now < next { return }
         if let last = lastUpdateCheck, now.timeIntervalSince(last) < 24 * 3600 { return }
         checkForUpdatesNow(manual: false)
@@ -642,7 +698,7 @@ final class AwakeController: ObservableObject {
         if manual { dismissedUpdateVersion = nil; showUpdateMessage("Checking for updates…", sticky: true) }
         Task {
             do {
-                let found = try await Updater.checkLatest()
+                let found = try await (hooks?.checkLatest ?? Updater.checkLatest)()
                 availableUpdate = found
                 lastUpdateCheck = Date()
                 nextUpdateAttempt = nil
@@ -669,7 +725,7 @@ final class AwakeController: ObservableObject {
     func installUpdate() {
         guard let update = availableUpdate, !Self.isPreview, !updateBusy else { return }
         let dest: URL
-        do { dest = try Updater.installedLocation() } catch {
+        do { dest = try hooks?.installDest ?? Updater.installedLocation() } catch {
             return showUpdateMessage(error.localizedDescription, failed: true)
         }
         updateBusy = true
@@ -694,8 +750,10 @@ final class AwakeController: ObservableObject {
                 Updater.cleanUp(app)
                 guard ok else { throw UpdateError("Couldn't replace the app. Nothing was changed.") }
                 NSLog("MacAwake: installed \(update.version), relaunching")
-                Updater.relaunchAfterExit(dest)
-                NSApp.terminate(nil)
+                if let relaunch = hooks?.relaunch { relaunch(dest) } else {
+                    Updater.relaunchAfterExit(dest)
+                    NSApp.terminate(nil)
+                }
             } catch {
                 NSLog("MacAwake: update failed: \(error.localizedDescription)")
                 if let newApp { Updater.cleanUp(newApp) }
@@ -741,8 +799,9 @@ final class AwakeController: ObservableObject {
 
     /// Debug: `--preview-lid-status active|starting|battery|hot` (with `--preview-panel`) shows that
     /// status in the panel, for snapshots. It changes only what's shown, never the lease.
-    private static let previewLidStatus: LidStatus? = {
-        let a = CommandLine.arguments
+    private static let previewLidStatus: LidStatus? = previewLidStatus(from: CommandLine.arguments)
+
+    static func previewLidStatus(from a: [String]) -> LidStatus? {
         guard a.contains("--preview-panel"), let i = a.firstIndex(of: "--preview-lid-status"), i + 1 < a.count
         else { return nil }
         switch a[i + 1] {
@@ -752,13 +811,13 @@ final class AwakeController: ObservableObject {
         case "hot": return .pausedHot
         default: return nil
         }
-    }()
+    }
 
     /// The mandatory battery floor for the lid hold. On power: always allowed. On battery: paused at or
     /// below `lidBatteryFloor` %, and resumes only above `lidBatteryResume` %, so it doesn't flap.
     /// Swap point for the battery-safeguards change: also require its shared check here.
     private func lidBatteryAllows() -> Bool {
-        let b = LidBattery.current()
+        let b = hooks?.lidBattery() ?? LidBattery.current()
         guard b.hasBattery, b.onBattery, let pct = b.percent else {
             lidBatteryLatched = false
             return true
@@ -770,7 +829,7 @@ final class AwakeController: ObservableObject {
 
     /// Pauses the lid hold while macOS reports the Mac as seriously hot.
     private func thermalAllows() -> Bool {
-        switch ProcessInfo.processInfo.thermalState {
+        switch hooks?.thermal() ?? ProcessInfo.processInfo.thermalState {
         case .serious, .critical: return false
         default: return true
         }
@@ -829,7 +888,7 @@ final class AwakeController: ObservableObject {
     /// Explains the risk once. Returns false if the user cancels.
     private func confirmLidWarning() -> Bool {
         if defaults.bool(forKey: "lidWarningAcknowledged") { return true }
-        NSApp.activate(ignoringOtherApps: true)
+        if hooks == nil { NSApp.activate(ignoringOtherApps: true) }
         let alert = NSAlert()
         alert.messageText = "Keep your Mac awake with the lid closed?"
         alert.informativeText = """
@@ -842,7 +901,7 @@ final class AwakeController: ObservableObject {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Turn On")
         alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        guard (hooks?.runAlert ?? { $0.runModal() })(alert) == .alertFirstButtonReturn else { return false }
         defaults.set(true, forKey: "lidWarningAcknowledged")
         return true
     }
@@ -933,7 +992,7 @@ final class AwakeController: ObservableObject {
     // MARK: - Wake helper
 
     func installWakeHelper() {
-        guard !Self.isDemo else { return }   // a demo never changes the real helper
+        guard !isDemo else { return }   // a demo never changes the real helper
         wakeHelperBusy = true
         wakeHelperError = nil
         waker.install { [weak self] ok in
@@ -947,7 +1006,7 @@ final class AwakeController: ObservableObject {
     }
 
     func uninstallWakeHelper() {
-        guard !Self.isDemo else { return }   // a demo never changes the real helper
+        guard !isDemo else { return }   // a demo never changes the real helper
         wakeHelperBusy = true
         waker.request(nil)
         wakeHelperError = nil
@@ -961,6 +1020,7 @@ final class AwakeController: ObservableObject {
     }
 
     private func relevantEvents(around now: Date) -> [EKEvent] {
+        if let provider = hooks?.events, hooks?.calendars == nil { return provider(now).filter(isRelevant).sorted { $0.startDate < $1.startDate } }
         let enabled = calendars.filter { !excludedCalendarIDs.contains($0.calendarIdentifier) }
         guard !enabled.isEmpty else { return [] }
 
@@ -1001,7 +1061,7 @@ final class AwakeController: ObservableObject {
     var launchAtLogin: Bool {
         get { SMAppService.mainApp.status == .enabled }
         set {
-            guard !Self.isDemo else { return }
+            guard !isDemo else { return }
             objectWillChange.send()
             do {
                 if newValue { try SMAppService.mainApp.register() }
@@ -1089,8 +1149,7 @@ enum Demo {
     /// Watched items shown in the `apps` state; the first one is busy.
     static let watched: [WatchedItem] = [.command("claude"), .command("codex"), .command("xcodebuild")]
 
-    static func resetDefaults() {
-        let d = UserDefaults(suiteName: suite)!
+    static func resetDefaults(choice: String = Demo.choice, in d: UserDefaults = UserDefaults(suiteName: suite)!) {
         d.removePersistentDomain(forName: suite)
         let mode: Mode = ["always": .alwaysOn, "timer": .timed, "off": .off, "run": .off][choice] ?? .auto
         d.set(mode.rawValue, forKey: "mode")
@@ -1111,10 +1170,10 @@ extension AwakeController {
     fileprivate func startDemo() {
         hasAccess = true
         wakeHelperInstalled = true
-        lidHelperInstalled = Demo.choice == "lid"
-        if Demo.choice == "apps" { demoWorking = [Demo.watched[0]] }
-        if Demo.choice == "run" { demoHeld = ["claude"] }
-        if Demo.choice == "battery" { demoPower = PowerState(onBattery: true, percent: 8, hasBattery: true) }
+        lidHelperInstalled = demoChoice == "lid"
+        if demoChoice == "apps" { demoWorking = [Demo.watched[0]] }
+        if demoChoice == "run" { demoHeld = ["claude"] }
+        if demoChoice == "battery" { demoPower = PowerState(onBattery: true, percent: 8, hasBattery: true) }
         let work = demoCalendar("Work", red: 0.2, green: 0.5, blue: 1)
         let personal = demoCalendar("Personal", red: 0.95, green: 0.6, blue: 0.1)
         calendars = [personal, work]
@@ -1127,7 +1186,7 @@ extension AwakeController {
             demoEvent("Overnight data import", work, now.addingTimeInterval(9 * hour), now.addingTimeInterval(12 * hour)),
         ]
         // Watched apps are what keeps the Mac awake in that state, not an event.
-        if Demo.choice == "apps" { demoEvents.removeFirst() }
+        if demoChoice == "apps" { demoEvents.removeFirst() }
         refresh()
     }
 
