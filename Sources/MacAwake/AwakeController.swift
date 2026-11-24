@@ -84,6 +84,10 @@ final class AwakeController: ObservableObject {
     @Published var wakeForEvents: Bool {
         didSet { defaults.set(wakeForEvents, forKey: "wakeForEvents"); refresh() }
     }
+    /// While asleep, wake briefly this often (minutes) to look for new events. 0 = never.
+    @Published var sleepCheckMinutes: Int {
+        didSet { defaults.set(sleepCheckMinutes, forKey: "sleepCheckMinutes"); refresh() }
+    }
     @Published var excludedCalendarIDs: Set<String> {
         didSet { defaults.set(Array(excludedCalendarIDs), forKey: "excludedCalendarIDs"); refresh() }
     }
@@ -96,6 +100,8 @@ final class AwakeController: ObservableObject {
     private let waker = WakeScheduler()
     private var timer: Timer?
     private var expiryTimer: Timer?
+    private var power: SystemPower?
+    private var checkInTimer: Timer?
     private var observers: [NSObjectProtocol] = []
     /// Opts out of App Nap, which could otherwise delay the 30 s check by minutes and start events late.
     /// Idle system sleep stays allowed; the power assertions decide that.
@@ -132,6 +138,7 @@ final class AwakeController: ObservableObject {
         trailMinutes = defaults.object(forKey: "trailMinutes") as? Int ?? 0
         excludedCalendarIDs = Set(defaults.stringArray(forKey: "excludedCalendarIDs") ?? [])
         wakeForEvents = defaults.object(forKey: "wakeForEvents") as? Bool ?? true
+        sleepCheckMinutes = defaults.object(forKey: "sleepCheckMinutes") as? Int ?? 15
         wakeHelperInstalled = waker.isHelperInstalled
 
         noNap = ProcessInfo.processInfo.beginActivity(
@@ -218,6 +225,11 @@ final class AwakeController: ObservableObject {
             Task { @MainActor in self?.refresh() }
         })
 
+        // Any wake, including the dark wakes our check-ins cause (which NSWorkspace doesn't report).
+        power = SystemPower { [weak self] in
+            Task { @MainActor in self?.handlePowerOn() }
+        }
+
         // About to sleep — make sure the next wake is up to date.
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.willSleepNotification, object: nil, queue: .main
@@ -231,6 +243,20 @@ final class AwakeController: ObservableObject {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.waker.request(nil) }
         })
+    }
+
+    /// The Mac just powered on, possibly only in a dark wake for a check-in. Keep it up for a minute,
+    /// ask the calendar to sync, and look again once it has had time to. `EKEventStoreChanged` also
+    /// refreshes as soon as anything new arrives; `refresh()` then schedules the next wake.
+    private func handlePowerOn() {
+        guard mode == .auto, wakeForEvents, wakeHelperInstalled, hasAccess else { return refresh() }
+        assertion.holdForCheckIn(seconds: 60)
+        store.refreshSourcesIfNecessary()
+        refresh()
+        checkInTimer?.invalidate()
+        checkInTimer = Timer.scheduledTimer(withTimeInterval: 40, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.refresh() }
+        }
     }
 
     // MARK: - Timed mode
@@ -326,10 +352,21 @@ final class AwakeController: ObservableObject {
         // Schedule a hardware wake for the next event, in case the Mac is asleep by then.
         let installed = waker.isHelperInstalled
         if installed != wakeHelperInstalled { wakeHelperInstalled = installed }
-        let wake = (mode == .auto && wakeForEvents && wakeHelperInstalled)
-            ? upcoming.map { window(for: $0).start } : nil
-        waker.request(wake)
+        let wakes = mode == .auto && wakeForEvents && wakeHelperInstalled
+        let wake = wakes ? upcoming.map { window(for: $0).start } : nil
+        // Also wake regularly to look for events added while asleep, if that comes sooner.
+        let checkIn = (wakes && hasAccess) ? nextCheckIn(after: now) : nil
+        waker.request([wake, checkIn].compactMap { $0 }.min())
         scheduledWake = wake
+    }
+
+    /// The next check-in time on a fixed clock grid (for 15 min: :00, :15, :30, :45), at least 2 minutes
+    /// away. The grid keeps the value the same between 30 s refreshes, so the helper isn't asked to
+    /// reschedule every time, and the 2 minutes give it time to act before the Mac sleeps.
+    private func nextCheckIn(after now: Date) -> Date? {
+        guard sleepCheckMinutes > 0 else { return nil }
+        let step = Double(sleepCheckMinutes * 60)
+        return Date(timeIntervalSince1970: ceil((now.timeIntervalSince1970 + 120) / step) * step)
     }
 
     // MARK: - Wake helper
