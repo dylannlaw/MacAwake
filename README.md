@@ -27,7 +27,7 @@ Most keep-awake apps only give you an on/off switch. You either have to remember
 
 📅 **Follow your calendar.** Your Mac stays awake during calendar events and sleeps normally the rest of the time. For example, block an hour for a long AI task and your Mac stays awake for that hour.
 
-⏳ **Stay awake for a set time.** Choose anything from 30 minutes to 12 hours. Add more time if you need it. When the time is up, MacAwake goes back to how it was set before.
+⏳ **Stay awake for a set time.** Choose anything from 30 minutes to 12 hours. Add more time if you need it. When the time is up, or you press Stop, MacAwake turns off and your Mac sleeps as usual.
 
 ☕ **Stay awake until you say stop.** For when you just want your Mac to stay on.
 

@@ -59,15 +59,12 @@ final class AwakeController: ObservableObject {
             refresh()
         }
     }
-    /// When the timed mode ends, and which mode it returns to.
+    /// When the timed mode ends. It then switches to Off.
     @Published private(set) var timedUntil: Date? {
         didSet {
             defaults.set(timedUntil?.timeIntervalSince1970, forKey: "timedUntil")
             scheduleTimedExpiry()
         }
-    }
-    private var timedReturnMode: Mode {
-        didSet { defaults.set(timedReturnMode.rawValue, forKey: "timedReturnMode") }
     }
     @Published var keepDisplayOn: Bool {
         didSet { defaults.set(keepDisplayOn, forKey: "keepDisplayOn"); refresh() }
@@ -120,15 +117,14 @@ final class AwakeController: ObservableObject {
 
     init() {
         let savedMode = Mode(rawValue: defaults.string(forKey: "mode") ?? "") ?? .auto
-        let returnMode = Mode(rawValue: defaults.string(forKey: "timedReturnMode") ?? "") ?? .auto
         let savedUntil = defaults.double(forKey: "timedUntil")
         let until = savedUntil > 0 ? Date(timeIntervalSince1970: savedUntil) : nil
-        timedReturnMode = returnMode == .timed ? .auto : returnMode
+        defaults.removeObject(forKey: "timedReturnMode")   // no longer used: a timer always ends in Off
         timedUntil = savedMode == .timed ? until : nil
         let savedStart = defaults.double(forKey: "timedStart")
         timedStart = (savedMode == .timed && savedStart > 0) ? Date(timeIntervalSince1970: savedStart) : nil
-        // A timer with no end time can't run; fall back. An expired one is handled by refresh().
-        mode = (savedMode == .timed && until == nil) ? timedReturnMode : savedMode
+        // A timer with no end time can't run; turn off. An expired one is handled by refresh().
+        mode = (savedMode == .timed && until == nil) ? .off : savedMode
         keepDisplayOn = defaults.object(forKey: "keepDisplayOn") as? Bool ?? true
         includeAllDay = defaults.object(forKey: "includeAllDay") as? Bool ?? false
         ignoreFreeEvents = defaults.object(forKey: "ignoreFreeEvents") as? Bool ?? false
@@ -239,9 +235,8 @@ final class AwakeController: ObservableObject {
 
     // MARK: - Timed mode
 
-    /// Keep the Mac awake for `minutes`, then go back to the current mode.
+    /// Keep the Mac awake for `minutes`, then switch to Off.
     func startTimed(minutes: Int) {
-        if mode != .timed { timedReturnMode = mode }
         timedStart = Date()
         timedUntil = Date().addingTimeInterval(Double(minutes) * 60)
         if mode == .timed { refresh() } else { mode = .timed }
@@ -256,15 +251,7 @@ final class AwakeController: ObservableObject {
 
     func stopTimed() {
         guard mode == .timed else { return }
-        mode = timedReturnMode
-    }
-
-    var timedReturnLabel: String {
-        switch timedReturnMode {
-        case .auto: return "Auto"
-        case .alwaysOn: return "Always awake"
-        case .off, .timed: return "Off"
-        }
+        mode = .off
     }
 
     private func scheduleTimedExpiry() {
@@ -286,9 +273,9 @@ final class AwakeController: ObservableObject {
     func refresh() {
         let now = Date()
 
-        // Timer ran out (or we woke after it would have): go back to the previous mode.
+        // Timer ran out (or we woke after it would have): switch to Off.
         if mode == .timed, timedUntil.map({ now >= $0 }) ?? true {
-            mode = timedReturnMode == .timed ? .auto : timedReturnMode   // didSet refreshes
+            mode = .off   // didSet refreshes
             return
         }
         var active: [EKEvent] = []
@@ -339,9 +326,7 @@ final class AwakeController: ObservableObject {
         // Schedule a hardware wake for the next event, in case the Mac is asleep by then.
         let installed = waker.isHelperInstalled
         if installed != wakeHelperInstalled { wakeHelperInstalled = installed }
-        // Timed mode that will hand back to Auto keeps the next event's wake in place too.
-        let followsCalendar = mode == .auto || (mode == .timed && timedReturnMode == .auto)
-        let wake = (followsCalendar && wakeForEvents && wakeHelperInstalled)
+        let wake = (mode == .auto && wakeForEvents && wakeHelperInstalled)
             ? upcoming.map { window(for: $0).start } : nil
         waker.request(wake)
         scheduledWake = wake

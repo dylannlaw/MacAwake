@@ -131,7 +131,7 @@ private struct StatusHeader: View {
         case .alwaysOn: return "Until you change the mode."
         case .timed:
             guard let until = controller.timedUntil else { return "" }
-            return "Until \(until.formatted(date: .omitted, time: .shortened)), then back to \(controller.timedReturnLabel)."
+            return "Until \(until.formatted(date: .omitted, time: .shortened)), then off."
         case .auto:
             if !controller.hasAccess { return "Needs calendar access." }
             if let e = controller.currentEvent, let until = controller.awakeUntil {
