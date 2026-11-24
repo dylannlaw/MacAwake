@@ -4,6 +4,7 @@ Design notes and change history. Read these before you change the project (see [
 
 ## Change notes (newest first)
 
+- [2026-11-24 · README stat badges](changes/2026-11-24-readme-badges.md): downloads, release, stars, macOS and license badges in the README header.
 - [2026-11-24 · Public repo: security review and contribution workflow](changes/2026-11-24-public-repo-security.md): pre-publication security check, hardened release workflow, contribution and security policies, and a script that protects `main`.
 - [2026-11-24 · Install with curl instead of a zip download](changes/2026-11-24-curl-install.md): a one-line Terminal installer that skips the Open Anyway step for the ad-hoc signed app.
 - [2026-11-24 · Check-in wakes for events added while asleep](changes/2026-11-24-sleep-check-in-wakes.md): while asleep, wakes briefly in the background every 15 min (configurable) to sync the calendar and schedule wakes for new events.
