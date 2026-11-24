@@ -14,6 +14,10 @@
 #   MACAWAKE_NO_OPEN=1       Don't open the app afterwards.
 #
 # Everything is inside main(), which runs on the last line, so a download cut off halfway runs nothing.
+#
+# Must run on macOS's /bin/bash 3.2 as well as newer bash: always write ${name} (with braces) when a
+# variable is followed by a non-ASCII character such as "…", and expand arrays that may be empty
+# as "${arr[@]+"${arr[@]}"}" so set -u doesn't trip on them.
 set -euo pipefail
 
 main() {
@@ -68,7 +72,8 @@ main() {
         sudo=(sudo)
     fi
 
-    say "Installing to $dest…"
+    # Braces matter: macOS's bash 3.2 reads the bytes of "…" as part of a bare $name.
+    say "Installing to ${dest}…"
     "${sudo[@]+"${sudo[@]}"}" rm -rf "$dest"
     "${sudo[@]+"${sudo[@]}"}" ditto "$app" "$dest"
     "${sudo[@]+"${sudo[@]}"}" xattr -dr com.apple.quarantine "$dest" 2>/dev/null || true
