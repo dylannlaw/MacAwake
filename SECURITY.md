@@ -17,6 +17,7 @@ MacAwake is a small menu bar app. The parts that matter most for security are:
   security bug.
 - **The helper installer** in `Sources/MacAwake/WakeScheduler.swift`, which runs commands as root
   after the admin password prompt.
+- **The installer** (`install.sh`), which people pipe from the latest release into `bash`.
 - **The release pipeline** (`.github/workflows/release.yml`) and the downloads it publishes.
 
 ## Supported versions

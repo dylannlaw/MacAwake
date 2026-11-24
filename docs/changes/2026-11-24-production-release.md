@@ -1,5 +1,7 @@
 # Production readiness: icon, release pipeline, fixes
 
+Superseded in part by [Install with curl](2026-11-24-curl-install.md): the README no longer links the zip.
+
 ## Summary
 
 This change gets MacAwake ready to ship:
