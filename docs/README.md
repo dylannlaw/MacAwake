@@ -10,6 +10,7 @@ Design notes and change history. Read these before you change the project (see [
 
 ## Change notes (newest first)
 
+- [2026-11-24 · Codecov coverage badge](changes/2026-11-24-coverage-badge.md): `main` coverage is uploaded to Codecov from the Tests workflow and shown as a README badge.
 - [2026-11-24 · Unit tests and code-only releases](changes/2026-11-24-unit-tests.md): an XCTest suite with a 95% coverage gate, test hooks so tests never touch the real Mac, and releases only when shipped code changes.
 - [2026-11-24 · In-app updates](changes/2026-11-24-in-app-updates.md): the panel shows when a new version is out and installs it with one click (checksum and signature checked, no Open Anyway step); **Check for updates** setting and **⋯ › Check for Updates…**.
 - [2026-11-24 · Battery settings by kind of Mac](changes/2026-11-24-device-kind.md): detects MacBook vs Mac mini / Mac Studio / iMac / Mac Pro; MacBooks always get the battery and lid settings, desktops only get UPS-worded battery settings while a UPS is attached.

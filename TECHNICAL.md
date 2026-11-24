@@ -220,9 +220,10 @@ Runs the XCTest suite in `Tests/MacAwakeTests` and fails if line coverage of the
 - The SwiftUI views in `MacAwakeApp.swift` are left out of the coverage figure. They're checked by looking at the `--demo` snapshots (see `AGENTS.md`).
 - Tests never touch the real Mac: each controller gets its own `UserDefaults` suite, its own scratch folders for the wake request and lid lease, no observers or timers, and a fake admin runner (`AdminShell.runner`), so there's no calendar prompt, admin dialog or real wake schedule. `AwakeController.TestHooks` supplies events, power, battery, temperature and the lid warning's answer.
 - Real processes (`sleep`, `yes`, a re-signed copy of `sleep`) exercise the process watcher and the `macawake run` holds.
-- `.github/workflows/tests.yml` runs it for pull requests and pushes that change code or tests.
+- `.github/workflows/tests.yml` runs it for pull requests and pushes that change code or tests. On pushes to `main` it also exports the coverage as lcov and uploads it to [Codecov](https://codecov.io/gh/dylannlaw/MacAwake) with the `CODECOV_TOKEN` repository secret; the README badge shows `main`. Pull requests never use the secret.
 
 Don't run the bare binary from `swift run`. Without the Info.plist, macOS kills it when it asks for calendar access. Always use `build.sh`.
+
 
 ## Releases and signing
 
@@ -458,7 +459,7 @@ MACAWAKE_FAKE_DEVICE=desktop MACAWAKE_FAKE_POWER=ac:100 build/MacAwake.app/Conte
 | `Info.plist`, `VERSION`, `build.sh`, `Package.swift` | Packaging and build |
 | `install.sh` | The curl installer, published with each release |
 | `.github/workflows/release.yml` | Builds code pull requests; builds and releases code pushes to `main` |
-| `.github/workflows/tests.yml` | Runs the unit tests and the coverage check |
+| `.github/workflows/tests.yml` | Runs the unit tests and the coverage check; uploads coverage to Codecov from `main` |
 | `Tests/MacAwakeTests/` | Unit tests and their helpers |
 | `scripts/coverage.sh` | Runs the tests and fails under 95% coverage |
 | `.github/CODEOWNERS`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/` | Review ownership and templates for contributors |

@@ -26,3 +26,22 @@ jobs:
           persist-credentials: false
       - name: Unit tests and coverage (95% minimum)
         run: ./scripts/coverage.sh
+
+      # Only on main: pull requests from forks get no secrets, and the token is passed to this step alone.
+      - name: Export coverage (lcov)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          bin="$(swift build --show-bin-path)"
+          xctest="$(find "$bin" -maxdepth 1 -name '*.xctest' | head -n 1)"
+          xcrun llvm-cov export -format=lcov \
+            -instr-profile "$bin/codecov/default.profdata" \
+            -ignore-filename-regex='(\.build|Tests)/' \
+            "$xctest/Contents/MacOS/$(basename "$xctest" .xctest)" > coverage.lcov
+          grep -c '^SF:' coverage.lcov
+      - name: Upload coverage to Codecov
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage.lcov
+          fail_ci_if_error: true

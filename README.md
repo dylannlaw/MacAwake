@@ -13,6 +13,7 @@
   <a href="https://github.com/dylannlaw/MacAwake/releases/latest"><img src="https://img.shields.io/github/v/release/dylannlaw/MacAwake?color=666666&labelColor=444444" alt="Latest release"></a>
   <a href="https://github.com/dylannlaw/MacAwake"><img src="https://img.shields.io/github/stars/dylannlaw/MacAwake?style=social" alt="Stars"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-666666?labelColor=444444" alt="macOS 14+">
+  <a href="https://codecov.io/gh/dylannlaw/MacAwake"><img src="https://codecov.io/gh/dylannlaw/MacAwake/branch/main/graph/badge.svg" alt="Test coverage on the main branch"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-666666?labelColor=444444" alt="MIT license"></a>
 </p>
 
