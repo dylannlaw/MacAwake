@@ -70,7 +70,7 @@ Click the coffee cup in the menu bar to open the panel.
 - Skip events you've marked as "Free"
 - Choose which calendars count
 - Set up **Wake from sleep**. Click **Set Up…** and enter your Mac password once.
-- Choose how often a sleeping Mac checks for new events (**Check for new events**: every 15 minutes, 30 minutes, hour, or never)
+- Choose how often a sleeping Mac checks for new events (**Check for new events**: every 5, 15 or 30 minutes, every hour, or never). More often catches last-minute events but uses more battery.
 
 **The menu bar icon** tells you the state at a glance:
 - ☕ filled: keeping your Mac awake
