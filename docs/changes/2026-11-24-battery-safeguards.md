@@ -57,3 +57,5 @@ This is gap #2 in the 2026-11-24 competitor gap analysis. Amphetamine and Keepin
 - Check on a MacBook: unplug with **Only when plugged in** on, and watch the panel and `pmset -g assertions` change straight away.
 - A notification when MacAwake pauses for low battery (gap #7) would make the pause visible while the panel is closed.
 - Closed-lid mode should call `batteryAllowsAwake` and may want a stricter default limit of its own.
+
+Superseded in part by [2026-11-24 · Battery settings by kind of Mac](2026-11-24-device-kind.md): which Macs see the Battery settings is now decided by the kind of Mac, not only by whether a battery or UPS is present.

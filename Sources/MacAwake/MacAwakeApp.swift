@@ -151,11 +151,21 @@ private struct StatusHeader: View {
     private var subtitle: String {
         if let r = controller.pauseReason {
             var text: String
+            if !controller.device.isLaptop {
+                // A desktop only pauses on UPS power, during a power cut.
+                switch r {
+                case .batteryLow(let pct):
+                    text = (pct.map { "UPS at \($0)%. " } ?? "UPS is low. ") + "Your Mac sleeps normally until mains power is back."
+                case .onBattery: text = "On UPS power. Keeps your Mac awake again when mains power is back."
+                case .lowPowerMode: text = "Low Power Mode is on during a power cut. Turn it off to keep your Mac awake."
+                }
+            } else {
             switch r {
             case .batteryLow(let pct):
                 text = (pct.map { "Battery at \($0)%. " } ?? "Battery is low. ") + "Plug in to keep your Mac awake."
             case .onBattery: text = "On battery. Plug in to keep your Mac awake."
             case .lowPowerMode: text = "Low Power Mode is on. Plug in or turn it off to keep your Mac awake."
+            }
             }
             if controller.mode == .timed, let until = controller.timedUntil {
                 text += " Timer still ends at \(until.formatted(date: .omitted, time: .shortened))."
@@ -429,21 +439,9 @@ private struct SettingsSection: View {
                         .labelsHidden().fixedSize()
                     }
 
-                    if controller.powerState.hasBattery {
+                    if let style = controller.batterySettings {
                         Divider()
-                        HStack {
-                            Label("Stop below", systemImage: "battery.25").font(.callout)
-                            Spacer()
-                            Picker("", selection: $controller.batteryStopPercent) {
-                                ForEach([0, 10, 20, 30, 50], id: \.self) { p in
-                                    Text(p == 0 ? "Never" : "\(p)%").tag(p)
-                                }
-                            }
-                            .labelsHidden().fixedSize()
-                        }
-                        .help("On battery, stop keeping your Mac awake once the charge drops below this. It resumes when you plug in.")
-                        SettingToggle("Only when plugged in", "powerplug", $controller.onlyWhenPluggedIn)
-                        SettingToggle("Pause in Low Power Mode", "leaf", $controller.pauseInLowPowerMode)
+                        BatterySettings(controller: controller, style: style)
                     }
 
                     Divider()
@@ -479,7 +477,7 @@ private struct SettingsSection: View {
                         Text(err).font(.caption).foregroundStyle(.red)
                     }
 
-                    if controller.hasBattery {
+                    if controller.showsLidSetting {
                         LidSetting(controller: controller)
                     }
 
@@ -509,6 +507,35 @@ private struct SettingsSection: View {
                 }
                 .transition(.opacity)
             }
+        }
+    }
+}
+
+/// Battery safeguards. A MacBook always gets them; a desktop only while macOS sees a UPS,
+/// with the same rules worded for a UPS.
+private struct BatterySettings: View {
+    @ObservedObject var controller: AwakeController
+    let style: BatterySettingsStyle
+
+    var body: some View {
+        let ups = style == .ups
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label(ups ? "Stop below (UPS)" : "Stop below", systemImage: ups ? "powerplug.portrait" : "battery.25")
+                    .font(.callout)
+                Spacer()
+                Picker("", selection: $controller.batteryStopPercent) {
+                    ForEach([0, 10, 20, 30, 50], id: \.self) { p in
+                        Text(p == 0 ? "Never" : "\(p)%").tag(p)
+                    }
+                }
+                .labelsHidden().fixedSize()
+            }
+            .help(ups
+                  ? "During a power cut, stop keeping your Mac awake once the UPS charge drops below this. It resumes when mains power is back."
+                  : "On battery, stop keeping your Mac awake once the charge drops below this. It resumes when you plug in.")
+            SettingToggle(ups ? "Only on mains power" : "Only when plugged in", "powerplug", $controller.onlyWhenPluggedIn)
+            SettingToggle("Pause in Low Power Mode", "leaf", $controller.pauseInLowPowerMode)
         }
     }
 }

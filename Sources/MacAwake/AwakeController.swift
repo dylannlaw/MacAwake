@@ -81,8 +81,12 @@ final class AwakeController: ObservableObject {
     @Published private(set) var lidHelperBusy = false
     @Published private(set) var lidHelperError: String?
     @Published private(set) var lidStatus: LidStatus = .off
-    /// False on Macs without a built-in battery (desktops), which have no lid either.
-    @Published private(set) var hasBattery = false
+    /// MacBook or desktop Mac, read once at launch. Decides which battery and lid settings are offered.
+    let device = DeviceKind.current
+    /// Shows "Keep awake with lid closed": MacBooks only, plus previews of a lid status.
+    @Published private(set) var showsLidSetting = false
+    /// Which battery settings the panel shows: always on a MacBook, on a desktop only while a UPS is attached.
+    var batterySettings: BatterySettingsStyle? { BatterySettingsStyle.for(device, power: powerState) }
     /// An installed helper is older than the one in this app.
     @Published private(set) var helpersNeedUpdate = false
 
@@ -244,8 +248,8 @@ final class AwakeController: ObservableObject {
         watchGraceMinutes = defaults.object(forKey: "watchGraceMinutes") as? Int ?? 5
         wakeHelperInstalled = waker.isHelperInstalled
         lidHelperInstalled = lid.isHelperInstalled
-        // Previews and the demo show the lid setting on desktops too, so screenshots match a MacBook.
-        hasBattery = LidBattery.current().hasBattery || Self.previewLidStatus != nil || Self.isDemo
+        // A lid status preview shows the lid setting on desktops too. The demo counts as a MacBook (`DeviceKind`).
+        showsLidSetting = device.isLaptop || Self.previewLidStatus != nil
         helpersNeedUpdate = waker.helperNeedsUpdate || lid.helperNeedsUpdate
 
         // A demo runs beside the real app: no timers, power assertions or wake requests.
@@ -535,8 +539,11 @@ final class AwakeController: ObservableObject {
 
         if Self.isDemo {
             // The real safeguard rule on made-up power; the lid shows on as if its helper had acted.
-            powerState = demoPower
-            pauseReason = shouldBeAwake ? evaluateSafeguards(demoPower) : nil
+            // `MACAWAKE_FAKE_POWER` overrides it (e.g. a desktop on a UPS); a desktop demo has no battery by default.
+            let power = PowerSource.parseFake(ProcessInfo.processInfo.environment["MACAWAKE_FAKE_POWER"])
+                ?? (device.isLaptop ? demoPower : PowerState())
+            powerState = power
+            pauseReason = shouldBeAwake ? evaluateSafeguards(power) : nil
             isAwake = shouldBeAwake && pauseReason == nil
             scheduledWake = mode == .auto && pauseReason == nil ? upcoming.map { window(for: $0).start } : nil
             lidStatus = lidClosedAwake && lidHelperInstalled && isAwake ? .active : .off
