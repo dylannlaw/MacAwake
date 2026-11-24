@@ -16,6 +16,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-666666?labelColor=444444" alt="MIT license"></a>
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/calendar.png" width="340" alt="The MacAwake panel in Calendar mode, keeping the Mac awake during an event and listing the next ones">
+</p>
+
 ## Contents
 
 - [Why MacAwake?](#why-macawake)
@@ -35,6 +39,8 @@ Most keep-awake apps only give you an on/off switch. You either have to remember
 ## What it can do
 
 📅 **Follow your calendar.** Your Mac stays awake during calendar events and sleeps normally the rest of the time. For example, block an hour for a long AI task and your Mac stays awake for that hour.
+
+🤖 **Stay awake while your apps are working.** Pick the apps or tools to watch, such as an AI coding agent. Your Mac stays awake while they're busy and sleeps a few minutes after they finish.
 
 ⏳ **Stay awake for a set time.** Choose anything from 30 minutes to 12 hours. Add more time if you need it. When the time is up, or you press Stop, MacAwake turns off and your Mac sleeps as usual.
 
@@ -66,13 +72,20 @@ MacAwake now lives in the menu bar at the top of your screen; look for the coffe
 
 Click the coffee cup in the menu bar to open the panel.
 
+<table>
+  <tr>
+    <td align="center" valign="top"><img src="docs/screenshots/timer.png" width="300" alt="Timer mode: a ring counting down, with +30m, +1h and Stop buttons"><br><sub><b>Timer:</b> counts down, then turns off</sub></td>
+    <td align="center" valign="top"><img src="docs/screenshots/settings.png" width="300" alt="The Settings section opened"><br><sub><b>Settings</b> opened (Calendar mode)</sub></td>
+  </tr>
+</table>
+
 **At the top**, you'll see what MacAwake is doing right now. For example: "Awake for an event · until 3:00 PM", or how long the timer has left.
 
 **Choose a mode** by clicking one of the four tiles:
 
 | Tile | What happens |
 |---|---|
-| **Calendar** | Stays awake during your events, sleeps otherwise |
+| **Calendar** | Stays awake during your events (and, if you turn it on, while watched apps are working), sleeps otherwise |
 | **Always** | Stays awake until you pick another mode |
 | **Timer** | Pick how long (30m to 12h). A ring counts down; use **+30m**, **+1h** or **Stop** at any time |
 | **Off** | Your Mac sleeps as usual |
@@ -85,6 +98,7 @@ Click the coffee cup in the menu bar to open the panel.
 - Choose whether all-day events (like holidays) count
 - Skip events you've marked as "Free"
 - Choose which calendars count
+- **Stay awake while apps are working**: click **Add** to pick AI agents (like Claude Code or Codex), one of your open apps, or a command by name. For each one, choose **While working** (only while it's busy) or **While open** (whenever it's running), and how long to stay awake after it finishes. This works in Calendar mode.
 - Set up **Wake from sleep**. Click **Set Up…** and enter your Mac password once.
 - Choose how often a sleeping Mac checks for new events (**Check for new events**: every 5, 15 or 30 minutes, every hour, or never). More often catches last-minute events but uses more battery.
 - Protect your battery (MacBooks only): stop keeping the Mac awake when the battery gets low (**Stop below**, 10% to start with), keep it awake **Only when plugged in**, or **Pause in Low Power Mode**
@@ -100,6 +114,7 @@ Click the coffee cup in the menu bar to open the panel.
 - **Which calendars?** Any calendar that appears in Apple's Calendar app, including Google, Outlook and Exchange. Add the account in **System Settings › Internet Accounts**.
 - **Declined or cancelled events** never keep your Mac awake.
 - **Low battery:** on a MacBook running on battery, MacAwake pauses when the charge drops below your limit, in every mode, and lets the Mac sleep. The panel says **Paused** and why. Plug in and it carries on by itself. A timer keeps counting down while paused.
+- **Watched apps** only count while the Mac is awake: they can't wake a sleeping Mac, and an AI agent left open but idle doesn't keep it awake when set to **While working**.
 - **Closing a MacBook's lid** still puts it to sleep, unless it's connected to power and an external display.
 - **New events while your Mac sleeps:** if you add an event from your phone while the Mac is asleep, MacAwake still catches it. Every 15 minutes (you can change this), it briefly wakes the Mac in the background with the screen off, checks your calendar, and goes back to sleep. So an event added less than 15 minutes before it starts might be missed. Checking works best when the Mac is plugged in; on battery, macOS may stop the check before your calendar has synced.
 - **Quitting MacAwake** lets your Mac sleep normally again and cancels any planned wake-up.

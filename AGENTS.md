@@ -25,7 +25,9 @@ If an idea was rejected before, don't bring it back without a new reason, and wr
 
 The build must finish with no errors. Then check what you changed:
 
-- UI: run `open /Applications/MacAwake.app --args --preview-panel --snapshot <scratch>/panel.png` and look at the PNG. To check a particular state, set it with `defaults write local.macawake.app …` first, and restore the user's settings afterwards.
+- UI: run `build/MacAwake.app/Contents/MacOS/MacAwake --preview-panel --demo calendar --snapshot <scratch>/panel.png` and look at the PNG, then stop the process.
+  `--demo` shows made-up events and keeps its settings apart, so it never touches the user's calendar, settings or wake schedule. Use `--demo timer`, `always` or `off` for other modes, and add `-panel.showSettings YES` to open Settings.
+  Without `--demo`, the preview runs as a second copy of the app and writes the same wake request as the installed app.
 - App behaviour: install the built app, then check `pmset -g assertions | grep -i calendar` during an event.
 - Wake helper: test `Helper/wake-helper.sh` without root by pointing `MACAWAKE_PMSET` at a fake `pmset` script that logs its arguments.
   Pass a request file and a state file in a temp folder.
@@ -35,6 +37,8 @@ The build must finish with no errors. Then check what you changed:
 ## 4. Update the README and the technical guide
 
 Documentation is split by audience. Update whichever your change affects, in the same change:
+
+- **UI changes:** if the panel looks or behaves differently, retake the README screenshots in `docs/screenshots/` (`calendar.png`, `timer.png`, `settings.png`) with the `--demo` command from step 3, and update the README text and alt text that describe them. The README must always match what users see.
 
 - **`README.md`**: for people who just use the app, many of them not technical. It covers what the app does, why it exists, how to install it and how to use it. Use plain language: no code, file paths, commands or internals. Keep it short and describe how things are now; it isn't a changelog.
 - **`TECHNICAL.md`**: everything else. How it works internally, the wake helper, the settings reference with defaults, building, releases and signing, how to check it's working, troubleshooting commands and the project layout.
