@@ -37,6 +37,12 @@ How MacAwake works under the hood, plus how to build, release and troubleshoot i
   - If events overlap, the Mac stays awake until the last one ends.
 - **Watched apps and commands** (Calendar mode, opt-in): see [below](#watched-apps-and-commands).
 - **Timer:** the end time and start time are saved, so a running timer survives a relaunch. When it runs out (also checked on wake and relaunch) or is stopped, the mode switches to Off. While a timer runs, no event wake is scheduled.
+- **Battery safeguards:** after the mode decides, `refresh()` asks the battery rules, which can veto keeping awake in every mode. The mode itself doesn't change; the panel shows "Paused: …".
+  - Power state comes from `PowerSource` (`IOPSCopyPowerSourcesInfo`; internal battery, else UPS). `IOPSNotificationCreateRunLoopSource` (plug/unplug, each % change) and `NSProcessInfoPowerStateDidChange` (Low Power Mode) trigger `refresh()`.
+  - Rules apply only on battery or UPS power. In order: charge below **Stop below** → `batteryLow`; **Only when plugged in** → `onBattery`; **Pause in Low Power Mode** and Low Power Mode on → `lowPowerMode`.
+  - Once the charge drops below the limit, it stays paused until power is connected (a latch), so readings near the limit can't make it flap. Changing the limit clears the latch.
+  - A timer keeps counting down while paused. Check-in wakes are skipped while a rule blocks; event wakes are still scheduled, in case the Mac is plugged in by then.
+  - Code that keeps the Mac awake must check `AwakeController.batteryAllowsAwake`. The rule itself is the pure `AwakeController.pauseReason(for:stopPercent:onlyPluggedIn:respectLowPowerMode:latched:)`.
 - **Settings** are stored in `UserDefaults` under the bundle ID `local.macawake.app`.
 
 ## Watched apps and commands
@@ -115,6 +121,9 @@ The panel's status area shows "Lid can be closed" or the reason it's paused. The
 | Stay awake after | At end | Keeps awake this long after an event ends. |
 | Wake Mac from sleep for events | On | Schedules wakes. Shown once the helper is installed. |
 | Check for new events | Every 15 min | Check-in wakes while asleep (`sleepCheckMinutes`: 0, 5, 15, 30, 60). 0 = never. 5 min catches late-added events sooner but wakes the Mac 12 times an hour, which costs more battery. Shown when wake is on. |
+| Stop below | 10% | `batteryStopPercent`: 0 (Never), 10, 20, 30, 50. On battery, stop keeping awake once the charge is below this, until power is connected. Battery settings show only on Macs with a battery or UPS. |
+| Only when plugged in | Off | `onlyWhenPluggedIn`: keep awake only on the power adapter. |
+| Pause in Low Power Mode | Off | `pauseInLowPowerMode`: pause while Low Power Mode is on. Only counts on battery. |
 | Keep awake with lid closed | Off | `lidClosedAwake`. While MacAwake keeps the Mac awake, a closed lid doesn't sleep it, even on battery. Needs the lid helper. Paused at ≤ 20 % battery (resumes > 25 %) or when the Mac is hot. MacBooks only. |
 | Calendars | All | Which calendars count. |
 | Stay awake while apps are working | Off | `watchAppsEnabled`. Calendar mode also follows watched items. |
@@ -358,6 +367,20 @@ It takes `calendar.png`, `timer.png`, `always.png`, `off.png` and `settings.png`
 - **The Mac won't sleep at all.** Check `pmset -g | grep SleepDisabled`. If `/var/db/local.macawake.lidawake` exists, MacAwake set it; the helper clears it within about 4 minutes of MacAwake stopping. If that file doesn't exist, something else set it, and MacAwake leaves it alone.
 - **The Mac didn't wake for an event.** Check that the helper is set up and a wake is listed by `pmset -g sched`. An event added while the Mac was asleep is only seen at the next check-in; `pmset -g log | grep -i macawake` shows whether check-in wakes happened.
 
+### Testing the battery safeguards
+
+Check the rule table (prints each case and exits, with status 1 on any failure):
+
+```bash
+build/MacAwake.app/Contents/MacOS/MacAwake --self-test-battery
+```
+
+Fake the power source to see the paused panel without draining a battery. `MACAWAKE_FAKE_POWER` takes `battery:<pct>`, `ac:<pct>` or `none`, plus `,lpm` for Low Power Mode. Pass settings as argument-domain overrides so your saved settings aren't changed:
+
+```bash
+open -n --env MACAWAKE_FAKE_POWER=battery:8 build/MacAwake.app --args --preview-panel --snapshot /tmp/panel.png -mode alwaysOn
+```
+
 ## Project layout
 
 | Path | What it is |
@@ -366,6 +389,7 @@ It takes `calendar.png`, `timer.png`, `always.png`, `off.png` and `settings.png`
 | `Sources/MacAwake/AwakeController.swift` | Calendar logic, modes, timer, settings and state |
 | `Sources/MacAwake/ProcessWatcher.swift` | Watched apps and commands: process scan and CPU sampling |
 | `Sources/MacAwake/SleepAssertion.swift` | Power assertions (the `caffeinate` part) |
+| `Sources/MacAwake/PowerSource.swift` | Battery and power-adapter state, and the battery self-test |
 | `Sources/MacAwake/SystemPower.swift` | Wake notifications from IOKit, including dark wakes |
 | `Sources/MacAwake/WakeScheduler.swift` | Writes wake requests; installs and removes the wake helper |
 | `Sources/MacAwake/LidScheduler.swift` | Lid lease, lid helper install and removal, battery reading |

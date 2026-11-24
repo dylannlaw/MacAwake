@@ -7,6 +7,7 @@ struct MacAwakeApp: App {
     @StateObject private var controller = AwakeController.shared
 
     init() {
+        if CommandLine.arguments.contains("--self-test-battery") { runBatterySelfTest() }
         // Debug: `MacAwake --preview-panel` also shows the panel in a normal window, for screenshots.
         if CommandLine.arguments.contains("--preview-panel") {
             DispatchQueue.main.async { PreviewWindow.show() }
@@ -123,6 +124,8 @@ private struct StatusHeader: View {
     }
 
     private var tint: Color {
+        if case .batteryLow = controller.pauseReason { return .red }
+        if controller.pauseReason != nil { return .yellow }
         if controller.heldAwake { return .green }
         switch controller.mode {
         case .off: return .secondary
@@ -133,6 +136,7 @@ private struct StatusHeader: View {
     }
 
     private var title: String {
+        if let r = controller.pauseReason { return "Paused: \(r.shortLabel)" }
         if controller.heldAwake { return "Awake for a command" }
         switch controller.mode {
         case .off: return "Sleeping normally"
@@ -145,6 +149,19 @@ private struct StatusHeader: View {
     }
 
     private var subtitle: String {
+        if let r = controller.pauseReason {
+            var text: String
+            switch r {
+            case .batteryLow(let pct):
+                text = (pct.map { "Battery at \($0)%. " } ?? "Battery is low. ") + "Plug in to keep your Mac awake."
+            case .onBattery: text = "On battery. Plug in to keep your Mac awake."
+            case .lowPowerMode: text = "Low Power Mode is on. Plug in or turn it off to keep your Mac awake."
+            }
+            if controller.mode == .timed, let until = controller.timedUntil {
+                text += " Timer still ends at \(until.formatted(date: .omitted, time: .shortened))."
+            }
+            return text
+        }
         if let held = controller.heldLine { return held }
         switch controller.mode {
         case .off: return "MacAwake is off. Your Mac sleeps as usual."
@@ -410,6 +427,23 @@ private struct SettingsSection: View {
                             }
                         }
                         .labelsHidden().fixedSize()
+                    }
+
+                    if controller.powerState.hasBattery {
+                        Divider()
+                        HStack {
+                            Label("Stop below", systemImage: "battery.25").font(.callout)
+                            Spacer()
+                            Picker("", selection: $controller.batteryStopPercent) {
+                                ForEach([0, 10, 20, 30, 50], id: \.self) { p in
+                                    Text(p == 0 ? "Never" : "\(p)%").tag(p)
+                                }
+                            }
+                            .labelsHidden().fixedSize()
+                        }
+                        .help("On battery, stop keeping your Mac awake once the charge drops below this. It resumes when you plug in.")
+                        SettingToggle("Only when plugged in", "powerplug", $controller.onlyWhenPluggedIn)
+                        SettingToggle("Pause in Low Power Mode", "leaf", $controller.pauseInLowPowerMode)
                     }
 
                     Divider()

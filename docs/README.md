@@ -4,11 +4,13 @@ Design notes and change history. Read these before you change the project (see [
 
 ## Plans
 
+- [Battery safeguards](plans/battery-safeguards.md): the implementation plan behind the battery-safeguards change.
 - [Closed-lid keep-awake](plans/closed-lid.md): the approved implementation plan for the change below.
 - [Process trigger](plans/process-trigger.md): the approved plan for watched apps and commands.
 
 ## Change notes (newest first)
 
+- [2026-11-24 · Battery safeguards](changes/2026-11-24-battery-safeguards.md): on battery, pauses keeping awake below a charge limit (default 10%), and optionally when unplugged or in Low Power Mode.
 - [2026-11-24 · Feature pages linked from the README](changes/2026-11-24-feature-pages.md): a plain-language page with screenshots for each feature in `docs/features/`, a feature table in the README, and `scripts/screenshots.sh` to retake every screenshot.
 - [2026-11-24 · Closed-lid keep-awake](changes/2026-11-24-closed-lid.md): optional keep-awake with the lid closed, even on battery, through a lease-based root helper with battery and heat cut-offs.
 - [2026-11-24 · Installer works with macOS's bash 3.2](changes/2026-11-24-installer-bash-3-2.md): fixes "dest?: unbound variable" in `curl … | bash` on stock Macs, and a workflow check to stop it coming back.
