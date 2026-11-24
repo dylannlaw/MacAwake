@@ -7,6 +7,7 @@ How MacAwake works under the hood, plus how to build, release and troubleshoot i
 - [How it works](#how-it-works)
 - [Wake from sleep: the helper](#wake-from-sleep-the-helper)
 - [Settings reference](#settings-reference)
+- [Automation: URLs and the `macawake` command](#automation-urls-and-the-macawake-command)
 - [Build from source](#build-from-source)
 - [Releases and signing](#releases-and-signing)
 - [Check that it's working](#check-that-its-working)
@@ -93,6 +94,58 @@ A sleeping Mac runs no apps, so MacAwake schedules a hardware wake ahead of time
 | Watched apps | None | `watchedItems`: JSON array of `{kind: app\|command, id, name, rule: working\|running}`. **Add › AI agents** adds `claude`, `codex`, `gemini`, `aider`, `cursor-agent`, `opencode`. |
 | Keep awake after (watched apps) | 5 min | `watchGraceMinutes`: 1, 2, 5, 10 or 15. |
 | Launch at Login | Off | Registers the app with `SMAppService`. Works best from /Applications. |
+
+## Automation: URLs and the `macawake` command
+
+### URLs
+
+MacAwake registers the `macawake://` scheme. Opening a URL (`open -g`, Shortcuts' **Open URLs**, a script) runs one command. If MacAwake isn't running, opening the URL launches it.
+
+| URL | Effect |
+|---|---|
+| `macawake://start?minutes=N` | Timer for `N` minutes (1–1440), then Off |
+| `macawake://start?until=HH:MM` | Timer until a 24-hour local time. A time already passed today means tomorrow. Must be 1–1440 minutes away. |
+| `macawake://extend?minutes=N` | Adds `N` minutes to the running timer, or starts one. Capped at 24 h from now. |
+| `macawake://stop` | Ends a running timer (then Off). Does nothing in other modes. |
+| `macawake://always` · `calendar` · `off` | Switches mode |
+| `macawake://hold?pid=P` | Stays awake while process `P` runs (used by `macawake run`) |
+| `macawake://release?pid=P` | Ends that hold early |
+
+**Mode commands do exactly what the panel's controls do.** `start` replaces Always or Calendar with a timer, as clicking Timer would. **Holds never change the mode.** While any hold is alive the Mac stays awake whatever the mode (and without the user-activity call, so the display isn't forced on). When the last one ends, the mode decides again.
+
+**Validation:** URLs come from anywhere, including web pages (browsers ask first), so they're treated as untrusted. A command is ignored, and logged as `MacAwake: ignored URL`, unless:
+- the scheme is `macawake`, the host is a known command, and there's no path, fragment, port or user
+- every query item is known for that command, not duplicated, and the whole URL is at most 256 bytes
+- `minutes` is 1–4 ASCII digits in 1…1440 (out of range is rejected, never clamped)
+- `until` is exactly `HH:MM`
+- `pid` is 1–7 digits and at least 2
+
+Holds are also refused for a process that doesn't exist or belongs to another user, and when 16 holds are already active. Each hold records the process's start time, so a reused PID doesn't count, and expires after 24 h. Holds live only in memory: they're gone if MacAwake quits.
+
+Code: `URLCommand.swift` (parser and `AppDelegate.application(_:open:)`), `ProcessHolds.swift`, and `AwakeController.perform(_:)`. URLs arrive through the app delegate because SwiftUI replaces a hand-installed Apple-event URL handler, and a `MenuBarExtra`-only app has no view for `onOpenURL`.
+
+### The `macawake` command
+
+The app ships a shell script at `MacAwake.app/Contents/Resources/macawake`. Put it on your `PATH`:
+
+```bash
+sudo ln -sf /Applications/MacAwake.app/Contents/Resources/macawake /usr/local/bin/macawake
+```
+
+| Command | Does |
+|---|---|
+| `macawake start <minutes>` / `start --until HH:MM` | Timer |
+| `macawake extend <minutes>` | Adds time |
+| `macawake stop` | Ends the timer |
+| `macawake always` / `calendar` / `off` | Switches mode |
+| `macawake run [--] <command> [args…]` | Runs the command and keeps the Mac awake until it exits |
+| `macawake status` | Prints the mode and timer end (from `defaults`). Holds aren't shown. |
+
+Arguments are checked before anything is sent (exit code 2 on bad input), and the app checks them again.
+
+**`macawake run`** sends `hold?pid=$$` and then `exec`s the command, so the command keeps the same PID, terminal, signals and exit code. Interactive tools like `claude` work normally. MacAwake watches the PID (`DispatchSource` process exit) and lets go as soon as it exits. If `open` can't reach MacAwake, it falls back to `exec caffeinate -i <command>`.
+
+**Shortcuts:** use **Open URLs** with a `macawake://` URL, or **Run Shell Script** with the command. There are no native Shortcuts actions: App Intents compile with the Command Line Tools, but Shortcuts only finds them through a `Metadata.appintents` bundle that Xcode's `appintentsmetadataprocessor` writes, and that tool isn't part of the Command Line Tools.
 
 ## Build from source
 
@@ -206,6 +259,22 @@ See the scheduled wake:
 pmset -g sched | grep MacAwake
 ```
 
+Try a URL or a hold (the second prints `MacAwake: while sleep runs` while it runs):
+
+```bash
+open -g "macawake://start?minutes=1" && sleep 2 && defaults read local.macawake.app mode
+```
+
+```bash
+macawake run -- sleep 30 & sleep 2; pmset -g assertions | grep "MacAwake: while"
+```
+
+See ignored URLs:
+
+```bash
+log show --last 10m --predicate 'process == "MacAwake" AND eventMessage CONTAINS "ignored URL"'
+```
+
 See the helper's log:
 
 ```bash
@@ -256,7 +325,10 @@ Each command keeps running after it saves the PNG (about 1.5 s); quit it before 
 | `Sources/MacAwake/SleepAssertion.swift` | Power assertions (the `caffeinate` part) |
 | `Sources/MacAwake/SystemPower.swift` | Wake notifications from IOKit, including dark wakes |
 | `Sources/MacAwake/WakeScheduler.swift` | Writes wake requests; installs and removes the helper |
+| `Sources/MacAwake/URLCommand.swift` | `macawake://` parsing and validation; the app delegate that receives URLs |
+| `Sources/MacAwake/ProcessHolds.swift` | Keep-awake holds for `macawake run` |
 | `Helper/wake-helper.sh` | The root helper that calls `pmset` |
+| `Helper/macawake-cli.sh` | The `macawake` command (copied into the app as `Resources/macawake`) |
 | `Resources/AppIcon.icns`, `Branding/` | App icon and the script that draws it |
 | `MacAwake.entitlements` | Calendar entitlement for hardened-runtime signing |
 | `Info.plist`, `VERSION`, `build.sh`, `Package.swift` | Packaging and build |

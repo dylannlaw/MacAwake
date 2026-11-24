@@ -26,6 +26,7 @@
 - [What it can do](#what-it-can-do)
 - [Get started](#get-started)
 - [Using MacAwake](#using-macawake)
+- [Control it from Shortcuts or scripts](#control-it-from-shortcuts-or-scripts)
 - [Good to know](#good-to-know)
 - [Contributing](#contributing)
 - [Technical details](#technical-details)
@@ -49,6 +50,8 @@ Most keep-awake apps only give you an on/off switch. You either have to remember
 ⏰ **Wake your Mac for your next event.** If your Mac has gone to sleep, MacAwake can wake it up just before your next event starts.
 
 🌙 **Off.** Your Mac sleeps as usual.
+
+🤖 **Stay awake while a job runs.** Start a long task from the Terminal or Shortcuts, and MacAwake keeps your Mac awake until it finishes, then goes back to what it was doing.
 
 ## Get started
 
@@ -107,6 +110,15 @@ Click the coffee cup in the menu bar to open the panel.
 - ☕ outline: waiting for your next event
 - ⏳: timer running
 - 🌙: off
+
+## Control it from Shortcuts or scripts
+
+You can start a timer, add time, stop or switch mode without opening the panel. This is handy for automations and for AI tools that run on their own.
+
+- **Shortcuts:** add an **Open URLs** action with a MacAwake link. For example, *macawake://start?minutes=90* keeps your Mac awake for 90 minutes, and *macawake://off* turns MacAwake off. The other links are *extend*, *stop*, *always* and *calendar*.
+- **Terminal:** MacAwake includes a small Terminal command. Start a long job through it, such as an AI coding assistant, and your Mac stays awake exactly as long as the job runs.
+
+The full list of links and commands, and how to set up the command, are in the [Technical guide](TECHNICAL.md#automation-urls-and-the-macawake-command).
 
 ## Good to know
 
