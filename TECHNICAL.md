@@ -332,16 +332,13 @@ cat /var/db/local.macawake.lidawake /var/log/macawake-lid.log
 build/MacAwake.app/Contents/MacOS/MacAwake --preview-panel --demo calendar --snapshot /tmp/panel.png
 ```
 
-`--demo` (only with `--preview-panel`) fills the panel with made-up events and two sample calendars. It keeps its settings in a separate `local.macawake.demo` domain, reset on each launch, and holds no power assertions and writes no wake requests, so it's safe to run beside the installed app. Pick the mode with `--demo calendar|always|timer|off` (a timer shows 1h25m left of 2h), and open Settings with `-panel.showSettings YES`. The README screenshots in `docs/screenshots/` are made this way:
+`--demo` (only with `--preview-panel`) fills the panel with made-up events and two sample calendars. It keeps its settings in a separate `local.macawake.demo` domain, reset on each launch, and holds no power assertions and writes no wake requests, so it's safe to run beside the installed app. Pick the mode with `--demo calendar|always|timer|off` (a timer shows 1h25m left of 2h), and open Settings with `-panel.showSettings YES`. The screenshots in `docs/screenshots/`, used by the README and the feature pages in `docs/features/`, are all made this way. Retake them in one go after `./build.sh`:
 
 ```bash
-B=build/MacAwake.app/Contents/MacOS/MacAwake
-$B --preview-panel --demo calendar --snapshot docs/screenshots/calendar.png -panel.showSettings NO
-$B --preview-panel --demo timer    --snapshot docs/screenshots/timer.png    -panel.showSettings NO
-$B --preview-panel --demo calendar --snapshot docs/screenshots/settings.png -panel.showSettings YES
+./scripts/screenshots.sh
 ```
 
-Each command keeps running after it saves the PNG (about 1.5 s); quit it before starting the next. Without `--demo`, the preview is a second copy of the app using your real settings, and it writes the same wake request file as the installed app.
+It takes `calendar.png`, `timer.png`, `always.png`, `off.png` and `settings.png` (Calendar mode with Settings open), quitting each preview after it saves the PNG, then crops `wake-header.png` and `wake.png` from `settings.png` with `sips`. If the Settings layout moves, adjust the crop offsets at the end of the script. Without `--demo`, the preview is a second copy of the app using your real settings, and it writes the same wake request file as the installed app.
 
 ## Troubleshooting
 
@@ -385,9 +382,10 @@ Each command keeps running after it saves the PNG (about 1.5 s); quit it before 
 | `.github/workflows/release.yml` | Builds pull requests; builds and releases pushes to `main` |
 | `.github/CODEOWNERS`, `.github/pull_request_template.md`, `.github/ISSUE_TEMPLATE/` | Review ownership and templates for contributors |
 | `scripts/protect-repo.sh` | Applies the GitHub settings: protects `main`, turns on security features |
+| `scripts/screenshots.sh` | Retakes every screenshot in `docs/screenshots/` from the built app with `--demo` data |
 | `CONTRIBUTING.md`, `SECURITY.md` | How to contribute; how to report security problems privately |
 | `AGENTS.md` | Workflow for anyone (human or AI) changing the project |
-| `docs/` | Change history, design notes and the README screenshots (`docs/screenshots/`) |
+| `docs/` | Change history, design notes, user feature pages (`docs/features/`) and screenshots (`docs/screenshots/`) |
 
 ## Contributing
 

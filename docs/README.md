@@ -9,6 +9,7 @@ Design notes and change history. Read these before you change the project (see [
 
 ## Change notes (newest first)
 
+- [2026-11-24 · Feature pages linked from the README](changes/2026-11-24-feature-pages.md): a plain-language page with screenshots for each feature in `docs/features/`, a feature table in the README, and `scripts/screenshots.sh` to retake every screenshot.
 - [2026-11-24 · Closed-lid keep-awake](changes/2026-11-24-closed-lid.md): optional keep-awake with the lid closed, even on battery, through a lease-based root helper with battery and heat cut-offs.
 - [2026-11-24 · Installer works with macOS's bash 3.2](changes/2026-11-24-installer-bash-3-2.md): fixes "dest?: unbound variable" in `curl … | bash` on stock Macs, and a workflow check to stop it coming back.
 - [2026-11-24 · Automation: URLs, `macawake` command, `macawake run`](changes/2026-11-24-automation.md): `macawake://` commands for scripts and Shortcuts, a bundled CLI, and keep-awake holds while a command runs.
