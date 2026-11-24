@@ -121,7 +121,9 @@ private struct StatusHeader: View {
         case .off: return "Sleeping normally"
         case .alwaysOn: return "Staying awake"
         case .timed: return "Awake on a timer"
-        case .auto: return controller.isAwake ? "Awake for an event" : "Waiting for events"
+        case .auto:
+            if !controller.isAwake { return "Waiting for events" }
+            return controller.currentEvent == nil ? "Awake for an app" : "Awake for an event"
         }
     }
 
@@ -133,10 +135,15 @@ private struct StatusHeader: View {
             guard let until = controller.timedUntil else { return "" }
             return "Until \(until.formatted(date: .omitted, time: .shortened)), then off."
         case .auto:
-            if !controller.hasAccess { return "Needs calendar access." }
             if let e = controller.currentEvent, let until = controller.awakeUntil {
-                return "\(e.title ?? "Event") · until \(until.formatted(date: .omitted, time: .shortened))"
+                let also = controller.activeWatched.first.map { " · also \($0.name)" } ?? ""
+                return "\(e.title ?? "Event") · until \(until.formatted(date: .omitted, time: .shortened))\(also)"
             }
+            if !controller.activeWatched.isEmpty {
+                return "While \(controller.watchedSummary(controller.activeWatched))."
+            }
+            if let finished = controller.watchedFinishedLine { return finished }
+            if !controller.hasAccess { return "Needs calendar access." }
             if let next = controller.nextEvent {
                 return "Next: \(next.title ?? "Event") · \(next.startDate.formatted(.relative(presentation: .named)))"
             }
@@ -388,6 +395,8 @@ private struct SettingsSection: View {
                     }
 
                     Divider()
+                    WatchedAppsSettings(controller: controller)
+                    Divider()
 
                     if controller.wakeHelperInstalled {
                         SettingToggle("Wake Mac from sleep for events", "alarm", $controller.wakeForEvents)
@@ -445,6 +454,119 @@ private struct SettingsSection: View {
                 .transition(.opacity)
             }
         }
+    }
+}
+
+// MARK: - Watched apps
+
+private struct WatchedAppsSettings: View {
+    @ObservedObject var controller: AwakeController
+    @StateObject private var addingCommand = Flag()
+    @StateObject private var commandName = TextBox()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SettingToggle("Stay awake while apps are working", "terminal", $controller.watchAppsEnabled)
+                .help("In Calendar mode, also keep the Mac awake while one of these apps or command-line tools is busy.")
+            if controller.watchAppsEnabled {
+                ForEach(controller.watchedItems) { item in row(item) }
+                if controller.watchedItems.isEmpty {
+                    Text("Add the apps or tools to watch, for example an AI agent.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if addingCommand.on { commandField }
+                HStack {
+                    addMenu
+                    Spacer()
+                    Text("Keep awake after").font(.caption).foregroundStyle(.secondary)
+                    Picker("", selection: $controller.watchGraceMinutes) {
+                        ForEach([1, 2, 5, 10, 15], id: \.self) { m in Text("\(m) min").tag(m) }
+                    }
+                    .labelsHidden().fixedSize().controlSize(.small)
+                    .help("How long to stay awake after the last activity, so pauses and restarts don't let the Mac sleep.")
+                }
+            }
+        }
+    }
+
+    private func row(_ item: WatchedItem) -> some View {
+        HStack(spacing: 6) {
+            icon(for: item).frame(width: 16, height: 16)
+            Text(item.name).font(.callout).lineLimit(1)
+            if controller.activeWatched.contains(item) {
+                Circle().fill(.green).frame(width: 6, height: 6).help("Active now")
+            }
+            Spacer()
+            Picker("", selection: Binding(get: { item.rule }, set: { controller.setRule($0, for: item) })) {
+                Text("While working").tag(WatchedItem.Rule.working)
+                Text("While open").tag(WatchedItem.Rule.running)
+            }
+            .labelsHidden().fixedSize().controlSize(.small)
+            .help("While working: only while it (or something it started) is using the processor. While open: whenever it's running.")
+            Button { controller.removeWatched(item) } label: {
+                Image(systemName: "minus.circle.fill").foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .help("Stop watching \(item.name)")
+        }
+    }
+
+    @ViewBuilder
+    private func icon(for item: WatchedItem) -> some View {
+        if item.kind == .app, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: item.id) {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable()
+        } else {
+            Image(systemName: "terminal").foregroundStyle(.secondary)
+        }
+    }
+
+    private var addMenu: some View {
+        Menu {
+            Button("AI agents (claude, codex, gemini…)") { controller.addWatched(WatchedItem.aiAgentPresets) }
+            Menu("Running apps") {
+                ForEach(runningApps, id: \.id) { app in
+                    Button(app.name) { controller.addWatched([app]) }
+                }
+            }
+            Button("Command…") { addingCommand.on = true }
+        } label: {
+            Label("Add", systemImage: "plus")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .controlSize(.small)
+    }
+
+    private var commandField: some View {
+        HStack(spacing: 6) {
+            TextField("Command name, e.g. xcodebuild", text: $commandName.text)
+                .textFieldStyle(.roundedBorder)
+                .controlSize(.small)
+                .onSubmit(addCommand)
+            Button("Add", action: addCommand).controlSize(.small)
+                .disabled(WatchedItem.cleanCommandName(commandName.text) == nil)
+            Button("Cancel") { commandName.text = ""; addingCommand.on = false }.controlSize(.small)
+        }
+    }
+
+    private func addCommand() {
+        guard let name = WatchedItem.cleanCommandName(commandName.text) else { return }
+        controller.addWatched([.command(name)])
+        commandName.text = ""
+        addingCommand.on = false
+    }
+
+    /// Regular (Dock) apps that are open now, as "while open" items.
+    private var runningApps: [WatchedItem] {
+        var seen = Set<String>()
+        return NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .compactMap { app -> WatchedItem? in
+                guard let id = app.bundleIdentifier, id != Bundle.main.bundleIdentifier, seen.insert(id).inserted
+                else { return nil }
+                return WatchedItem(kind: .app, id: id, name: app.localizedName ?? id, rule: .running)
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 }
 
@@ -568,6 +690,11 @@ private func shortDuration(_ minutes: Int) -> String {
 /// A bit of local view state. Used instead of @State, whose macro plugin the Command Line Tools don't ship.
 final class Flag: ObservableObject {
     @Published var on = false
+}
+
+/// Text field state, for the same reason as `Flag`.
+final class TextBox: ObservableObject {
+    @Published var text = ""
 }
 
 /// Debug-only window that hosts the panel (see `--preview-panel`).

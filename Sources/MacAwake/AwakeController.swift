@@ -8,7 +8,7 @@ enum Mode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .auto: return "Auto — follow calendar"
+        case .auto: return "Auto — follow calendar and watched apps"
         case .alwaysOn: return "Always awake"
         case .timed: return "Awake for a set time"
         case .off: return "Off"
@@ -45,6 +45,12 @@ final class AwakeController: ObservableObject {
     @Published private(set) var timedStart: Date? {
         didSet { defaults.set(timedStart?.timeIntervalSince1970, forKey: "timedStart") }
     }
+    /// Watched apps/commands that are active right now.
+    @Published private(set) var activeWatched: [WatchedItem] = []
+    /// The ones that were active last, shown during the grace period ("claude finished").
+    @Published private(set) var recentWatched: [WatchedItem] = []
+    /// Set while only the grace period is keeping the Mac awake: when it ends.
+    @Published private(set) var watchGraceUntil: Date?
     @Published private(set) var wakeHelperInstalled = false
     @Published private(set) var wakeHelperBusy = false
     /// Shown in the panel when setting up or removing the helper didn't work.
@@ -88,6 +94,20 @@ final class AwakeController: ObservableObject {
     @Published var sleepCheckMinutes: Int {
         didSet { defaults.set(sleepCheckMinutes, forKey: "sleepCheckMinutes"); refresh() }
     }
+    /// In Calendar mode, also stay awake while a watched app or command is working.
+    @Published var watchAppsEnabled: Bool {
+        didSet { defaults.set(watchAppsEnabled, forKey: "watchAppsEnabled"); refresh() }
+    }
+    @Published var watchedItems: [WatchedItem] {
+        didSet {
+            defaults.set(try? JSONEncoder().encode(watchedItems), forKey: "watchedItems")
+            refresh()
+        }
+    }
+    /// Stay awake this long after the last watched activity.
+    @Published var watchGraceMinutes: Int {
+        didSet { defaults.set(watchGraceMinutes, forKey: "watchGraceMinutes"); refresh() }
+    }
     @Published var excludedCalendarIDs: Set<String> {
         didSet { defaults.set(Array(excludedCalendarIDs), forKey: "excludedCalendarIDs"); refresh() }
     }
@@ -102,6 +122,8 @@ final class AwakeController: ObservableObject {
     private let store = EKEventStore()
     private let assertion = SleepAssertion()
     private let waker = WakeScheduler()
+    private let watcher = ProcessWatcher()
+    private var lastWatchedActivity: Date?
     private var timer: Timer?
     private var expiryTimer: Timer?
     private var power: SystemPower?
@@ -146,6 +168,10 @@ final class AwakeController: ObservableObject {
         excludedCalendarIDs = Set(defaults.stringArray(forKey: "excludedCalendarIDs") ?? [])
         wakeForEvents = defaults.object(forKey: "wakeForEvents") as? Bool ?? true
         sleepCheckMinutes = defaults.object(forKey: "sleepCheckMinutes") as? Int ?? 15
+        watchAppsEnabled = defaults.object(forKey: "watchAppsEnabled") as? Bool ?? false
+        watchedItems = defaults.data(forKey: "watchedItems")
+            .flatMap { try? JSONDecoder().decode([WatchedItem].self, from: $0) } ?? []
+        watchGraceMinutes = defaults.object(forKey: "watchGraceMinutes") as? Int ?? 5
         wakeHelperInstalled = waker.isHelperInstalled
 
         // A demo runs beside the real app: no timers, power assertions or wake requests.
@@ -234,6 +260,19 @@ final class AwakeController: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in self?.refresh() }
         })
+
+        // A watched app opened or quit: no need to wait for the 30 s poll.
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+                forName: name, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, self.watchAppsEnabled, self.watchedItems.contains(where: { $0.kind == .app })
+                    else { return }
+                    self.refresh()
+                }
+            })
+        }
 
         // Any wake, including the dark wakes our check-ins cause (which NSWorkspace doesn't report).
         power = SystemPower { [weak self] in
@@ -332,12 +371,29 @@ final class AwakeController: ObservableObject {
         awakeUntil = latest.map { window(for: $0).end }
         nextEvent = upcoming
 
+        // Watched apps and commands (Calendar mode only), with a grace period after the last activity.
+        let watching = mode == .auto && watchAppsEnabled && !watchedItems.isEmpty
+        let working = watching ? watcher.active(watchedItems, now: now) : []
+        if !working.isEmpty {
+            lastWatchedActivity = now
+            if recentWatched != working { recentWatched = working }
+        }
+        if !watching { lastWatchedActivity = nil }
+        let graceEnd = lastWatchedActivity.map { $0.addingTimeInterval(Double(watchGraceMinutes) * 60) }
+        let watchedAwake = graceEnd.map { now < $0 } ?? false
+        if activeWatched != working { activeWatched = working }
+        watchGraceUntil = (watchedAwake && working.isEmpty) ? graceEnd : nil
+
         let shouldBeAwake: Bool
         let reason: String
         switch mode {
         case .auto:
-            shouldBeAwake = latest != nil
-            reason = "Calendar event: \(latest?.title ?? "")"
+            shouldBeAwake = latest != nil || watchedAwake
+            reason = latest != nil
+                ? "Calendar event: \(latest?.title ?? "")"
+                : working.isEmpty
+                    ? "MacAwake: \(recentWatched.first?.name ?? "watched app") finished, staying awake briefly"
+                    : "MacAwake: \(watchedSummary(working))"
         case .alwaysOn:
             shouldBeAwake = true
             reason = "MacAwake: always awake"
@@ -358,7 +414,8 @@ final class AwakeController: ObservableObject {
         if shouldBeAwake {
             // An event just started. If the Mac only half-woke for it (a scheduled "dark" wake),
             // count it as user activity so the display comes on and the Mac doesn't drop back to sleep.
-            if !isAwake && mode == .auto { assertion.declareUserActivity(reason: reason) }
+            // Only events do this: a watched app must never light the screen in a check-in dark wake.
+            if !isAwake && mode == .auto && latest != nil { assertion.declareUserActivity(reason: reason) }
             assertion.enable(reason: reason, keepDisplayOn: keepDisplayOn)
         } else {
             assertion.disable()
@@ -383,6 +440,40 @@ final class AwakeController: ObservableObject {
         guard sleepCheckMinutes > 0 else { return nil }
         let step = Double(sleepCheckMinutes * 60)
         return Date(timeIntervalSince1970: ceil((now.timeIntervalSince1970 + 120) / step) * step)
+    }
+
+    // MARK: - Watched apps
+
+    func addWatched(_ items: [WatchedItem]) {
+        let new = items.filter { item in !watchedItems.contains { $0.kind == item.kind && $0.id == item.id } }
+        if !new.isEmpty { watchedItems += new }
+    }
+
+    func removeWatched(_ item: WatchedItem) {
+        watchedItems.removeAll { $0.kind == item.kind && $0.id == item.id }
+    }
+
+    func setRule(_ rule: WatchedItem.Rule, for item: WatchedItem) {
+        guard let i = watchedItems.firstIndex(where: { $0.kind == item.kind && $0.id == item.id }) else { return }
+        watchedItems[i].rule = rule
+    }
+
+    /// "claude is working", "claude and codex are working", "claude and 2 more are working".
+    func watchedSummary(_ items: [WatchedItem]) -> String {
+        guard let first = items.first else { return "a watched app is working" }
+        let verb = items.contains { $0.rule == .working } ? "working" : "running"
+        switch items.count {
+        case 1: return "\(first.name) is \(verb)"
+        case 2: return "\(first.name) and \(items[1].name) are \(verb)"
+        default: return "\(first.name) and \(items.count - 1) more are \(verb)"
+        }
+    }
+
+    /// "claude finished": shown while only the grace period keeps the Mac awake.
+    var watchedFinishedLine: String? {
+        guard let until = watchGraceUntil else { return nil }
+        let who = recentWatched.first.map { recentWatched.count > 1 ? "\($0.name) and others" : $0.name } ?? "Watched app"
+        return "\(who) finished · sleeping after \(timeFormatter.string(from: until))"
     }
 
     // MARK: - Wake helper
@@ -486,10 +577,12 @@ final class AwakeController: ObservableObject {
             let remaining = left >= 60 ? "\(left / 60)h \(left % 60)m" : "\(left)m"
             return "Awake for \(remaining) more · until \(timeFormatter.string(from: until))"
         case .auto:
-            if !hasAccess { return "Needs calendar access" }
             if let e = currentEvent, let until = awakeUntil {
                 return "Awake — \(e.title ?? "Event") · until \(timeFormatter.string(from: until))"
             }
+            if !activeWatched.isEmpty { return "Awake — \(watchedSummary(activeWatched))" }
+            if let finished = watchedFinishedLine { return "Awake — \(finished)" }
+            if !hasAccess { return "Needs calendar access" }
             return "Idle — no event right now"
         }
     }
