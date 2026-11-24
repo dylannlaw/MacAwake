@@ -405,7 +405,7 @@ private struct SettingsSection: View {
                                 Label("Check for new events", systemImage: "arrow.clockwise").font(.callout)
                                 Spacer()
                                 Picker("", selection: $controller.sleepCheckMinutes) {
-                                    ForEach([0, 15, 30, 60], id: \.self) { m in
+                                    ForEach([0, 5, 15, 30, 60], id: \.self) { m in
                                         Text(m == 0 ? "Never" : (m == 60 ? "Every hour" : "Every \(m) min")).tag(m)
                                     }
                                 }

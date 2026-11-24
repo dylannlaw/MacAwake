@@ -114,7 +114,11 @@ final class AwakeController: ObservableObject {
 
     // MARK: - Internals
 
-    private let defaults = UserDefaults.standard
+    /// `--preview-panel --demo`: sample events and settings, for screenshots. See `Demo` below.
+    static let isDemo = CommandLine.arguments.contains("--preview-panel") && CommandLine.arguments.contains("--demo")
+
+    // A demo keeps its settings apart, so it never changes the real ones.
+    private let defaults = isDemo ? UserDefaults(suiteName: Demo.suite)! : UserDefaults.standard
     private let store = EKEventStore()
     private let assertion = SleepAssertion()
     private let waker = WakeScheduler()
@@ -128,6 +132,8 @@ final class AwakeController: ObservableObject {
     /// Opts out of App Nap, which could otherwise delay the 30 s check by minutes and start events late.
     /// Idle system sleep stays allowed; the power assertions decide that.
     private var noNap: NSObjectProtocol?
+    /// Sample events shown instead of the calendar's in a demo.
+    private var demoEvents: [EKEvent] = []
 
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -144,6 +150,7 @@ final class AwakeController: ObservableObject {
     }()
 
     init() {
+        if Self.isDemo { Demo.resetDefaults() }
         let savedMode = Mode(rawValue: defaults.string(forKey: "mode") ?? "") ?? .auto
         let savedUntil = defaults.double(forKey: "timedUntil")
         let until = savedUntil > 0 ? Date(timeIntervalSince1970: savedUntil) : nil
@@ -166,6 +173,9 @@ final class AwakeController: ObservableObject {
             .flatMap { try? JSONDecoder().decode([WatchedItem].self, from: $0) } ?? []
         watchGraceMinutes = defaults.object(forKey: "watchGraceMinutes") as? Int ?? 5
         wakeHelperInstalled = waker.isHelperInstalled
+
+        // A demo runs beside the real app: no timers, power assertions or wake requests.
+        if Self.isDemo { startDemo(); return }
 
         noNap = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiatedAllowingIdleSystemSleep],
@@ -347,7 +357,7 @@ final class AwakeController: ObservableObject {
         var upcoming: EKEvent?
 
         if hasAccess {
-            let events = relevantEvents(around: now)
+            let events = Self.isDemo ? demoEvents : relevantEvents(around: now)
             active = events.filter { window(for: $0).contains(now) }
             upcoming = events.first { window(for: $0).start > now }
             agenda = Array(events.filter { $0.endDate > now }.prefix(4))
@@ -393,6 +403,12 @@ final class AwakeController: ObservableObject {
         case .off:
             shouldBeAwake = false
             reason = ""
+        }
+
+        if Self.isDemo {
+            isAwake = shouldBeAwake
+            scheduledWake = mode == .auto ? upcoming.map { window(for: $0).start } : nil
+            return
         }
 
         if shouldBeAwake {
@@ -463,6 +479,7 @@ final class AwakeController: ObservableObject {
     // MARK: - Wake helper
 
     func installWakeHelper() {
+        guard !Self.isDemo else { return }   // a demo never changes the real helper
         wakeHelperBusy = true
         wakeHelperError = nil
         waker.install { [weak self] ok in
@@ -475,6 +492,7 @@ final class AwakeController: ObservableObject {
     }
 
     func uninstallWakeHelper() {
+        guard !Self.isDemo else { return }   // a demo never changes the real helper
         wakeHelperBusy = true
         waker.request(nil)
         wakeHelperError = nil
@@ -528,6 +546,7 @@ final class AwakeController: ObservableObject {
     var launchAtLogin: Bool {
         get { SMAppService.mainApp.status == .enabled }
         set {
+            guard !Self.isDemo else { return }
             objectWillChange.send()
             do {
                 if newValue { try SMAppService.mainApp.register() }
@@ -576,5 +595,62 @@ final class AwakeController: ObservableObject {
     var wakeLine: String? {
         guard let w = scheduledWake else { return nil }
         return "Wakes Mac at \(relativeFormatter.string(from: w))"
+    }
+}
+
+// MARK: - Demo (screenshots)
+
+/// Sample data for `--preview-panel --demo [calendar|always|timer|off]`, so screenshots for the README
+/// show the same made-up events on any Mac and never anyone's real calendar.
+enum Demo {
+    static let suite = "local.macawake.demo"
+
+    static func resetDefaults() {
+        let d = UserDefaults(suiteName: suite)!
+        d.removePersistentDomain(forName: suite)
+        let args = CommandLine.arguments
+        let choice = args.firstIndex(of: "--demo").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+        let mode: Mode = ["always": .alwaysOn, "timer": .timed, "off": .off][choice ?? ""] ?? .auto
+        d.set(mode.rawValue, forKey: "mode")
+        if mode == .timed {
+            let now = Date().timeIntervalSince1970
+            d.set(now - 35 * 60, forKey: "timedStart")
+            d.set(now + 85 * 60, forKey: "timedUntil")
+        }
+    }
+}
+
+extension AwakeController {
+    fileprivate func startDemo() {
+        hasAccess = true
+        wakeHelperInstalled = true
+        let work = demoCalendar("Work", red: 0.2, green: 0.5, blue: 1)
+        let personal = demoCalendar("Personal", red: 0.95, green: 0.6, blue: 0.1)
+        calendars = [personal, work]
+        let now = Date()
+        let hour = 3600.0
+        demoEvents = [
+            demoEvent("AI coding session", work, now.addingTimeInterval(-0.3 * hour), now.addingTimeInterval(0.7 * hour)),
+            demoEvent("Team standup", work, now.addingTimeInterval(1.5 * hour), now.addingTimeInterval(1.75 * hour)),
+            demoEvent("Record podcast", personal, now.addingTimeInterval(3 * hour), now.addingTimeInterval(4 * hour)),
+            demoEvent("Overnight data import", work, now.addingTimeInterval(9 * hour), now.addingTimeInterval(12 * hour)),
+        ]
+        refresh()
+    }
+
+    private func demoCalendar(_ title: String, red: CGFloat, green: CGFloat, blue: CGFloat) -> EKCalendar {
+        let c = EKCalendar(for: .event, eventStore: store)
+        c.title = title
+        c.cgColor = CGColor(red: red, green: green, blue: blue, alpha: 1)
+        return c
+    }
+
+    private func demoEvent(_ title: String, _ cal: EKCalendar, _ start: Date, _ end: Date) -> EKEvent {
+        let e = EKEvent(eventStore: store)
+        e.title = title
+        e.calendar = cal
+        e.startDate = start
+        e.endDate = end
+        return e
     }
 }
