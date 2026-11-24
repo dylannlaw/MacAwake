@@ -12,17 +12,25 @@ final class WakeScheduler {
     static let statePath = "/var/db/local.macawake.lastwake"
 
     let requestDir: URL
+    let daemonPlist: URL
+    let helperPath: String
+    private let bundle: Bundle
     var requestFile: URL { requestDir.appendingPathComponent("next-wake") }
 
     private var lastWritten: Date??   // nil = never written this run
 
-    init() {
+    /// The parameters exist so tests can point everything at a scratch folder.
+    init(requestDir: URL? = nil, daemonPlist: URL = WakeScheduler.daemonPlist,
+         helperPath: String = WakeScheduler.helperPath, bundle: Bundle = .main) {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        requestDir = support.appendingPathComponent("MacAwake", isDirectory: true)
+        self.requestDir = requestDir ?? support.appendingPathComponent("MacAwake", isDirectory: true)
+        self.daemonPlist = daemonPlist
+        self.helperPath = helperPath
+        self.bundle = bundle
     }
 
     var isHelperInstalled: Bool {
-        FileManager.default.fileExists(atPath: Self.daemonPlist.path)
+        FileManager.default.fileExists(atPath: daemonPlist.path)
     }
 
     /// Ask for a wake at `date`, or clear it with nil. Writes only when the value changes.
@@ -45,7 +53,7 @@ final class WakeScheduler {
     // MARK: - Install / remove (one admin prompt each)
 
     func install(completion: @escaping (Bool) -> Void) {
-        guard let helper = Bundle.main.url(forResource: "wake-helper", withExtension: "sh") else {
+        guard let helper = bundle.url(forResource: "wake-helper", withExtension: "sh") else {
             NSLog("MacAwake: wake-helper.sh missing from the app bundle")
             completion(false)
             return
@@ -60,7 +68,7 @@ final class WakeScheduler {
 
         let plist: [String: Any] = [
             "Label": Self.label,
-            "ProgramArguments": ["/bin/sh", Self.helperPath, requestFile.path, Self.statePath],
+            "ProgramArguments": ["/bin/sh", helperPath, requestFile.path, Self.statePath],
             "WatchPaths": [requestDir.path],
             "RunAtLoad": true,
             "StandardOutPath": "/var/log/macawake-wake.log",
@@ -76,10 +84,10 @@ final class WakeScheduler {
             return
         }
 
-        let dest = Self.daemonPlist.path
+        let dest = daemonPlist.path
         let script = [
             "/bin/mkdir -p /Library/PrivilegedHelperTools",
-            "/usr/bin/install -o root -g wheel -m 755 \(q(helper.path)) \(q(Self.helperPath))",
+            "/usr/bin/install -o root -g wheel -m 755 \(q(helper.path)) \(q(helperPath))",
             "/usr/bin/install -o root -g wheel -m 644 \(q(tmpPlist.path)) \(q(dest))",
             "/bin/launchctl bootout system/\(Self.label) 2>/dev/null || true",
             "/bin/launchctl bootstrap system \(q(dest))",
@@ -98,7 +106,7 @@ final class WakeScheduler {
             // Cancel the wake we last scheduled, if any.
             "if [ -f \(q(Self.statePath)) ]; then t=$(/bin/cat \(q(Self.statePath)) | /usr/bin/tr -cd 0-9); " +
                 "[ -n \"$t\" ] && /usr/bin/pmset schedule cancel wake \"$(/bin/date -r $t '+%m/%d/%y %H:%M:%S')\" MacAwake; true; fi",
-            "/bin/rm -f \(q(Self.daemonPlist.path)) \(q(Self.helperPath)) \(q(Self.statePath))",
+            "/bin/rm -f \(q(daemonPlist.path)) \(q(helperPath)) \(q(Self.statePath))",
         ].joined(separator: "; ")
         runAsAdmin(script, prompt: "MacAwake wants to remove its wake helper.", completion: completion)
     }
@@ -112,9 +120,9 @@ final class WakeScheduler {
     /// True when the installed root copy is older than the one in this app.
     var helperNeedsUpdate: Bool {
         guard isHelperInstalled,
-              let bundled = Bundle.main.path(forResource: "wake-helper", ofType: "sh"),
+              let bundled = bundle.path(forResource: "wake-helper", ofType: "sh"),
               let new = AdminShell.helperVersion(atPath: bundled),
-              let old = AdminShell.helperVersion(atPath: Self.helperPath) else { return false }
+              let old = AdminShell.helperVersion(atPath: helperPath) else { return false }
         return old < new
     }
 }

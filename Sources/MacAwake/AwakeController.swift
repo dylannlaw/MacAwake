@@ -169,11 +169,12 @@ final class AwakeController: ObservableObject {
     static let isDemo = CommandLine.arguments.contains("--preview-panel") && CommandLine.arguments.contains("--demo")
 
     // A demo keeps its settings apart, so it never changes the real ones.
-    private let defaults = isDemo ? UserDefaults(suiteName: Demo.suite)! : UserDefaults.standard
+    private let defaults: UserDefaults
     private let store = EKEventStore()
     private let assertion = SleepAssertion()
-    private let waker = WakeScheduler()
-    private let lid = LidScheduler()
+    private let waker: WakeScheduler
+    private let lid: LidScheduler
+    private let hooks: TestHooks?
     private var powerWatcher: PowerSourceWatcher?
     /// Set when the lid hold paused for a low battery; cleared above `lidBatteryResume` or on power.
     private var lidBatteryLatched = false
@@ -215,7 +216,27 @@ final class AwakeController: ObservableObject {
         return f
     }()
 
-    init() {
+    /// Stand-ins for the parts of the Mac the unit tests can't (or must not) touch: with them the controller
+    /// runs without observers, timers, calendar permission prompts or dialogs. See `Tests/`.
+    struct TestHooks {
+        /// Calendar events to use. Setting it also counts as having calendar access.
+        var events: ((Date) -> [EKEvent])?
+        var power: () -> PowerState = { PowerState() }
+        var lidBattery: () -> LidBattery = { LidBattery(hasBattery: false, onBattery: false, percent: nil) }
+        var thermal: () -> ProcessInfo.ThermalState = { .nominal }
+        /// Answer to the lid heat warning, instead of showing it.
+        var confirmLid: () -> Bool = { true }
+        var openURL: (URL) -> Void = { _ in }
+        /// Also register the system observers and timers (for the tests that post notifications).
+        var observe = false
+    }
+
+    init(defaults suite: UserDefaults? = nil, waker: WakeScheduler = WakeScheduler(), lid: LidScheduler = LidScheduler(),
+         hooks: TestHooks? = nil) {
+        self.defaults = suite ?? (Self.isDemo ? UserDefaults(suiteName: Demo.suite)! : UserDefaults.standard)
+        self.waker = waker
+        self.lid = lid
+        self.hooks = hooks
         if Self.isDemo { Demo.resetDefaults() }
         let savedMode = Mode(rawValue: defaults.string(forKey: "mode") ?? "") ?? .auto
         let savedUntil = defaults.double(forKey: "timedUntil")
@@ -245,11 +266,18 @@ final class AwakeController: ObservableObject {
         wakeHelperInstalled = waker.isHelperInstalled
         lidHelperInstalled = lid.isHelperInstalled
         // Previews and the demo show the lid setting on desktops too, so screenshots match a MacBook.
-        hasBattery = LidBattery.current().hasBattery || Self.previewLidStatus != nil || Self.isDemo
+        hasBattery = (hooks?.lidBattery() ?? LidBattery.current()).hasBattery || Self.previewLidStatus != nil || Self.isDemo
         helpersNeedUpdate = waker.helperNeedsUpdate || lid.helperNeedsUpdate
 
         // A demo runs beside the real app: no timers, power assertions or wake requests.
         if Self.isDemo { startDemo(); return }
+        // Under test: no observers, timers or permission prompts. The test calls `refresh()` itself.
+        if let hooks {
+            hasAccess = hooks.events != nil
+            if hooks.observe { startObserving() }
+            scheduleTimedExpiry()
+            return
+        }
 
         noNap = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiatedAllowingIdleSystemSleep],
@@ -289,7 +317,7 @@ final class AwakeController: ObservableObject {
 
     func openPrivacySettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") {
-            NSWorkspace.shared.open(url)
+            if let hooks { hooks.openURL(url) } else { NSWorkspace.shared.open(url) }
         }
     }
 
@@ -392,7 +420,7 @@ final class AwakeController: ObservableObject {
     /// The Mac just powered on, possibly only in a dark wake for a check-in. Keep it up for a minute,
     /// ask the calendar to sync, and look again once it has had time to. `EKEventStoreChanged` also
     /// refreshes as soon as anything new arrives; `refresh()` then schedules the next wake.
-    private func handlePowerOn() {
+    func handlePowerOn() {
         guard mode == .auto, wakeForEvents, wakeHelperInstalled, hasAccess else { return refresh() }
         assertion.holdForCheckIn(seconds: 60)
         store.refreshSourcesIfNecessary()
@@ -544,7 +572,7 @@ final class AwakeController: ObservableObject {
         }
 
         // Battery safeguards veto keeping awake in every mode; the mode itself is left as it is.
-        powerState = powerSource?.current() ?? PowerState()
+        powerState = hooks?.power() ?? powerSource?.current() ?? PowerState()
         safeguard = evaluateSafeguards(powerState)
         pauseReason = shouldBeAwake ? safeguard : nil
         let holdAwake = shouldBeAwake && safeguard == nil
@@ -618,7 +646,7 @@ final class AwakeController: ObservableObject {
     /// below `lidBatteryFloor` %, and resumes only above `lidBatteryResume` %, so it doesn't flap.
     /// Swap point for the battery-safeguards change: also require its shared check here.
     private func lidBatteryAllows() -> Bool {
-        let b = LidBattery.current()
+        let b = hooks?.lidBattery() ?? LidBattery.current()
         guard b.hasBattery, b.onBattery, let pct = b.percent else {
             lidBatteryLatched = false
             return true
@@ -630,7 +658,7 @@ final class AwakeController: ObservableObject {
 
     /// Pauses the lid hold while macOS reports the Mac as seriously hot.
     private func thermalAllows() -> Bool {
-        switch ProcessInfo.processInfo.thermalState {
+        switch hooks?.thermal() ?? ProcessInfo.processInfo.thermalState {
         case .serious, .critical: return false
         default: return true
         }
@@ -689,6 +717,7 @@ final class AwakeController: ObservableObject {
     /// Explains the risk once. Returns false if the user cancels.
     private func confirmLidWarning() -> Bool {
         if defaults.bool(forKey: "lidWarningAcknowledged") { return true }
+        if let hooks { return hooks.confirmLid() }
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "Keep your Mac awake with the lid closed?"
@@ -821,6 +850,7 @@ final class AwakeController: ObservableObject {
     }
 
     private func relevantEvents(around now: Date) -> [EKEvent] {
+        if let provider = hooks?.events { return provider(now).filter(isRelevant).sorted { $0.startDate < $1.startDate } }
         let enabled = calendars.filter { !excludedCalendarIDs.contains($0.calendarIdentifier) }
         guard !enabled.isEmpty else { return [] }
 

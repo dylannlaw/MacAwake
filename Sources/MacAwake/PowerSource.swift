@@ -92,6 +92,13 @@ final class PowerSource {
 /// Debug: `MacAwake --self-test-battery` checks the safeguard rule against a table, prints the result
 /// and exits (status 1 on any failure). Not reachable from the UI.
 func runBatterySelfTest() -> Never {
+    let result = batterySelfTest()
+    result.lines.forEach { print($0) }
+    exit(result.failed == 0 ? 0 : 1)
+}
+
+/// The self-test's table run, as text lines plus the number of failures.
+func batterySelfTest() -> (lines: [String], failed: Int) {
     func s(_ fake: String) -> PowerState { PowerSource.parseFake(fake)! }
     let cases: [(String, PowerState, Int, Bool, Bool, Bool, PauseReason?)] = [
         // name, power, stop%, onlyPluggedIn, respectLPM, latched, expected
@@ -109,13 +116,14 @@ func runBatterySelfTest() -> Never {
         ("unknown percent: no level block", s("battery"), 10, false, false, false, nil),
     ]
     var failed = 0
+    var lines: [String] = []
     for (name, p, stop, plugged, lpm, latched, want) in cases {
         let got = AwakeController.pauseReason(for: p, stopPercent: stop, onlyPluggedIn: plugged,
                                               respectLowPowerMode: lpm, latched: latched)
         let ok = got == want
         if !ok { failed += 1 }
-        print("\(ok ? "ok  " : "FAIL") \(name)\(ok ? "" : " — got \(String(describing: got))")")
+        lines.append("\(ok ? "ok  " : "FAIL") \(name)\(ok ? "" : " — got \(String(describing: got))")")
     }
-    print(failed == 0 ? "All \(cases.count) passed." : "\(failed) of \(cases.count) failed.")
-    exit(failed == 0 ? 0 : 1)
+    lines.append(failed == 0 ? "All \(cases.count) passed." : "\(failed) of \(cases.count) failed.")
+    return (lines, failed)
 }

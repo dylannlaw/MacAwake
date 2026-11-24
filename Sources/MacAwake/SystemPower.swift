@@ -35,7 +35,7 @@ final class SystemPower {
         }
     }
 
-    private func handle(_ messageType: natural_t, _ argument: UnsafeMutableRawPointer?) {
+    func handle(_ messageType: natural_t, _ argument: UnsafeMutableRawPointer?) {
         switch messageType {
         case Self.canSystemSleep, Self.systemWillSleep:
             // We never object to sleep; acknowledge straight away so sleep isn't delayed.
