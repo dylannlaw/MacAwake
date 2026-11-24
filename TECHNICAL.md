@@ -7,6 +7,7 @@ How MacAwake works under the hood, plus how to build, release and troubleshoot i
 - [How it works](#how-it-works)
 - [Wake from sleep: the helper](#wake-from-sleep-the-helper)
 - [Settings reference](#settings-reference)
+- [Automation: URLs and the `macawake` command](#automation-urls-and-the-macawake-command)
 - [Build from source](#build-from-source)
 - [Releases and signing](#releases-and-signing)
 - [Check that it's working](#check-that-its-working)
@@ -34,8 +35,20 @@ How MacAwake works under the hood, plus how to build, release and troubleshoot i
   - All-day events count only if you turn that on.
   - You can choose to skip events marked Free.
   - If events overlap, the Mac stays awake until the last one ends.
+- **Watched apps and commands** (Calendar mode, opt-in): see [below](#watched-apps-and-commands).
 - **Timer:** the end time and start time are saved, so a running timer survives a relaunch. When it runs out (also checked on wake and relaunch) or is stopped, the mode switches to Off. While a timer runs, no event wake is scheduled.
 - **Settings** are stored in `UserDefaults` under the bundle ID `local.macawake.app`.
+
+## Watched apps and commands
+
+In Calendar mode with **Stay awake while apps are working** on, the Mac also stays awake while a watched item is active, plus a grace period (default 5 min) after the last activity. Code: `ProcessWatcher.swift`, called from `refresh()`; there's no extra timer.
+
+- **Items** are apps (by bundle ID, matched against `NSWorkspace.runningApplications`) or commands (by executable name). Launch/quit notifications refresh at once for apps; commands are seen on the next 30 s refresh.
+- **Command matching:** only the current user's processes (`proc_listallpids` + `PROC_PIDT_SHORTBSDINFO`). A process matches on its short name (`p_comm`), or its executable's file name when `p_comm` is cut at 16 characters. For interpreters and shells (`node`, `bun`, `deno`, `python*`, `ruby`, `perl`, `bash`, `sh`, `zsh`) it also matches the base name of `argv[0]` and of the first non-option argument (via `KERN_PROCARGS2`, extension `.js`/`.mjs`/`.cjs`/`.ts`/`.py` dropped), so `node …/bin/codex.js` counts as `codex`.
+- **Rules:** *While open* (`running`) = a match exists. *While working* (`working`) = the matched processes **plus all their descendants** used at least 1 % of one core since the previous sample. CPU is `proc_pid_rusage(RUSAGE_INFO_V2)` user + system + reaped-children time, converted from Mach ticks. A process first seen after the previous sample counts all its CPU as new. This matters because the Claude desktop app keeps an idle `claude` process per open session.
+- **Sampling:** samples less than 10 s apart reuse the last result; a gap over 120 s (for example sleep) discards the baseline, so the first scan after a wake counts nothing as working. A scan of about 600 processes takes about 3–4 ms.
+- **Sleep:** watched items never call `IOPMAssertionDeclareUserActivity`; only events do, so a check-in dark wake never turns the screen on for an agent. No wakes are scheduled for watched items. Always, Timer and Off ignore them.
+- **Assertion reason:** `MacAwake: claude is working` (or `… and 2 more are working`).
 
 ## Wake from sleep: the helper
 
@@ -77,7 +90,62 @@ A sleeping Mac runs no apps, so MacAwake schedules a hardware wake ahead of time
 | Wake Mac from sleep for events | On | Schedules wakes. Shown once the helper is installed. |
 | Check for new events | Every 15 min | Check-in wakes while asleep (`sleepCheckMinutes`: 0, 5, 15, 30, 60). 0 = never. 5 min catches late-added events sooner but wakes the Mac 12 times an hour, which costs more battery. Shown when wake is on. |
 | Calendars | All | Which calendars count. |
+| Stay awake while apps are working | Off | `watchAppsEnabled`. Calendar mode also follows watched items. |
+| Watched apps | None | `watchedItems`: JSON array of `{kind: app\|command, id, name, rule: working\|running}`. **Add › AI agents** adds `claude`, `codex`, `gemini`, `aider`, `cursor-agent`, `opencode`. |
+| Keep awake after (watched apps) | 5 min | `watchGraceMinutes`: 1, 2, 5, 10 or 15. |
 | Launch at Login | Off | Registers the app with `SMAppService`. Works best from /Applications. |
+
+## Automation: URLs and the `macawake` command
+
+### URLs
+
+MacAwake registers the `macawake://` scheme. Opening a URL (`open -g`, Shortcuts' **Open URLs**, a script) runs one command. If MacAwake isn't running, opening the URL launches it.
+
+| URL | Effect |
+|---|---|
+| `macawake://start?minutes=N` | Timer for `N` minutes (1–1440), then Off |
+| `macawake://start?until=HH:MM` | Timer until a 24-hour local time. A time already passed today means tomorrow. Must be 1–1440 minutes away. |
+| `macawake://extend?minutes=N` | Adds `N` minutes to the running timer, or starts one. Capped at 24 h from now. |
+| `macawake://stop` | Ends a running timer (then Off). Does nothing in other modes. |
+| `macawake://always` · `calendar` · `off` | Switches mode |
+| `macawake://hold?pid=P` | Stays awake while process `P` runs (used by `macawake run`) |
+| `macawake://release?pid=P` | Ends that hold early |
+
+**Mode commands do exactly what the panel's controls do.** `start` replaces Always or Calendar with a timer, as clicking Timer would. **Holds never change the mode.** While any hold is alive the Mac stays awake whatever the mode (and without the user-activity call, so the display isn't forced on). When the last one ends, the mode decides again.
+
+**Validation:** URLs come from anywhere, including web pages (browsers ask first), so they're treated as untrusted. A command is ignored, and logged as `MacAwake: ignored URL`, unless:
+- the scheme is `macawake`, the host is a known command, and there's no path, fragment, port or user
+- every query item is known for that command, not duplicated, and the whole URL is at most 256 bytes
+- `minutes` is 1–4 ASCII digits in 1…1440 (out of range is rejected, never clamped)
+- `until` is exactly `HH:MM`
+- `pid` is 1–7 digits and at least 2
+
+Holds are also refused for a process that doesn't exist or belongs to another user, and when 16 holds are already active. Each hold records the process's start time, so a reused PID doesn't count, and expires after 24 h. Holds live only in memory: they're gone if MacAwake quits.
+
+Code: `URLCommand.swift` (parser and `AppDelegate.application(_:open:)`), `ProcessHolds.swift`, and `AwakeController.perform(_:)`. URLs arrive through the app delegate because SwiftUI replaces a hand-installed Apple-event URL handler, and a `MenuBarExtra`-only app has no view for `onOpenURL`.
+
+### The `macawake` command
+
+The app ships a shell script at `MacAwake.app/Contents/Resources/macawake`. Put it on your `PATH`:
+
+```bash
+sudo ln -sf /Applications/MacAwake.app/Contents/Resources/macawake /usr/local/bin/macawake
+```
+
+| Command | Does |
+|---|---|
+| `macawake start <minutes>` / `start --until HH:MM` | Timer |
+| `macawake extend <minutes>` | Adds time |
+| `macawake stop` | Ends the timer |
+| `macawake always` / `calendar` / `off` | Switches mode |
+| `macawake run [--] <command> [args…]` | Runs the command and keeps the Mac awake until it exits |
+| `macawake status` | Prints the mode and timer end (from `defaults`). Holds aren't shown. |
+
+Arguments are checked before anything is sent (exit code 2 on bad input), and the app checks them again.
+
+**`macawake run`** sends `hold?pid=$$` and then `exec`s the command, so the command keeps the same PID, terminal, signals and exit code. Interactive tools like `claude` work normally. MacAwake watches the PID (`DispatchSource` process exit) and lets go as soon as it exits. If `open` can't reach MacAwake, it falls back to `exec caffeinate -i <command>`.
+
+**Shortcuts:** use **Open URLs** with a `macawake://` URL, or **Run Shell Script** with the command. There are no native Shortcuts actions: App Intents compile with the Command Line Tools, but Shortcuts only finds them through a `Metadata.appintents` bundle that Xcode's `appintentsmetadataprocessor` writes, and that tool isn't part of the Command Line Tools.
 
 ## Build from source
 
@@ -179,10 +247,32 @@ pmset -g assertions | grep -i macawake
 pmset -g assertions | grep -i "calendar event"
 ```
 
+See whether a watched app is keeping the Mac awake:
+
+```bash
+pmset -g assertions | grep -iE "is (working|running)"
+```
+
 See the scheduled wake:
 
 ```bash
 pmset -g sched | grep MacAwake
+```
+
+Try a URL or a hold (the second prints `MacAwake: while sleep runs` while it runs):
+
+```bash
+open -g "macawake://start?minutes=1" && sleep 2 && defaults read local.macawake.app mode
+```
+
+```bash
+macawake run -- sleep 30 & sleep 2; pmset -g assertions | grep "MacAwake: while"
+```
+
+See ignored URLs:
+
+```bash
+log show --last 10m --predicate 'process == "MacAwake" AND eventMessage CONTAINS "ignored URL"'
 ```
 
 See the helper's log:
@@ -228,10 +318,14 @@ It takes `calendar.png`, `timer.png`, `always.png`, `off.png` and `settings.png`
 |---|---|
 | `Sources/MacAwake/MacAwakeApp.swift` | App entry point and the menu bar panel UI |
 | `Sources/MacAwake/AwakeController.swift` | Calendar logic, modes, timer, settings and state |
+| `Sources/MacAwake/ProcessWatcher.swift` | Watched apps and commands: process scan and CPU sampling |
 | `Sources/MacAwake/SleepAssertion.swift` | Power assertions (the `caffeinate` part) |
 | `Sources/MacAwake/SystemPower.swift` | Wake notifications from IOKit, including dark wakes |
 | `Sources/MacAwake/WakeScheduler.swift` | Writes wake requests; installs and removes the helper |
+| `Sources/MacAwake/URLCommand.swift` | `macawake://` parsing and validation; the app delegate that receives URLs |
+| `Sources/MacAwake/ProcessHolds.swift` | Keep-awake holds for `macawake run` |
 | `Helper/wake-helper.sh` | The root helper that calls `pmset` |
+| `Helper/macawake-cli.sh` | The `macawake` command (copied into the app as `Resources/macawake`) |
 | `Resources/AppIcon.icns`, `Branding/` | App icon and the script that draws it |
 | `MacAwake.entitlements` | Calendar entitlement for hardened-runtime signing |
 | `Info.plist`, `VERSION`, `build.sh`, `Package.swift` | Packaging and build |

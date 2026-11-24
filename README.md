@@ -26,6 +26,7 @@
 - [What it can do](#what-it-can-do)
 - [Get started](#get-started)
 - [Using MacAwake](#using-macawake)
+- [Control it from Shortcuts or scripts](#control-it-from-shortcuts-or-scripts)
 - [Good to know](#good-to-know)
 - [Contributing](#contributing)
 - [Technical details](#technical-details)
@@ -79,6 +80,10 @@ Click a feature to read how it works and when to use it.
   </tr>
 </table>
 
+🤖 **Stay awake while your apps are working.** Pick the apps or tools to watch, such as an AI coding agent. Your Mac stays awake while they're busy and sleeps a few minutes after they finish. Set it up in **Settings** (Calendar mode).
+
+🤖 **Stay awake while a job runs.** Start a long task from the Terminal or Shortcuts, and MacAwake keeps your Mac awake until it finishes, then goes back to what it was doing.
+
 ## Get started
 
 1. Open **Terminal** (press ⌘ Space, type "Terminal" and press Return).
@@ -104,7 +109,7 @@ Click the coffee cup in the menu bar to open the panel.
 - **At the top**, you'll see what MacAwake is doing right now. For example: "Awake for an event · until 3:00 PM", or how long the timer has left.
 - **Choose a mode** by clicking one of the four tiles: [Calendar](docs/features/calendar.md), [Always](docs/features/always-on.md), [Timer](docs/features/timer.md) or [Off](docs/features/off.md).
 - **Coming up** lists your next few events. The one keeping your Mac awake right now is marked **Now**.
-- **Settings** (click to open) holds the options for calendar events and [waking from sleep](docs/features/wake-from-sleep.md). Every option is explained in [Settings and the menu bar](docs/features/settings.md).
+- **Settings** (click to open) holds the options for calendar events, watched apps and [waking from sleep](docs/features/wake-from-sleep.md). To watch an app, click **Add** under **Stay awake while apps are working** and pick an AI agent (like Claude Code or Codex), one of your open apps, or a command by name; choose **While working** or **While open**, and how long to stay awake after it finishes. Every option is explained in [Settings and the menu bar](docs/features/settings.md).
 
 **The menu bar icon** tells you the state at a glance:
 - ☕ filled: keeping your Mac awake
@@ -112,10 +117,20 @@ Click the coffee cup in the menu bar to open the panel.
 - ⏳: timer running
 - 🌙: off
 
+## Control it from Shortcuts or scripts
+
+You can start a timer, add time, stop or switch mode without opening the panel. This is handy for automations and for AI tools that run on their own.
+
+- **Shortcuts:** add an **Open URLs** action with a MacAwake link. For example, *macawake://start?minutes=90* keeps your Mac awake for 90 minutes, and *macawake://off* turns MacAwake off. The other links are *extend*, *stop*, *always* and *calendar*.
+- **Terminal:** MacAwake includes a small Terminal command. Start a long job through it, such as an AI coding assistant, and your Mac stays awake exactly as long as the job runs.
+
+The full list of links and commands, and how to set up the command, are in the [Technical guide](TECHNICAL.md#automation-urls-and-the-macawake-command).
+
 ## Good to know
 
 - **Which calendars?** Any calendar that appears in Apple's Calendar app, including Google, Outlook and Exchange. Add the account in **System Settings › Internet Accounts**.
 - **Declined or cancelled events** never keep your Mac awake.
+- **Watched apps** only count while the Mac is awake: they can't wake a sleeping Mac, and an AI agent left open but idle doesn't keep it awake when set to **While working**.
 - **Closing a MacBook's lid** still puts it to sleep, unless it's connected to power and an external display.
 - **New events while your Mac sleeps:** if you add an event from your phone while the Mac is asleep, MacAwake still catches it by briefly checking your calendar every 15 minutes (you can change this). An event added less than 15 minutes before it starts might be missed. See [Wake from sleep](docs/features/wake-from-sleep.md#catching-events-added-while-your-mac-sleeps).
 - **Quitting MacAwake** lets your Mac sleep normally again and cancels any planned wake-up.

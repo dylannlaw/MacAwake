@@ -5,7 +5,7 @@
 Everything in MacAwake lives in one panel. Click the coffee cup ☕ in the menu bar to open it, and click **Settings** to see the options.
 
 <p align="center">
-  <img src="../screenshots/settings.png" width="300" alt="The panel with Settings open, showing Keep display on, Count all-day events, Ignore events marked Free, Wake before, Stay awake after, Wake Mac from sleep for events, Check for new events and Calendars, with Launch at Login at the bottom.">
+  <img src="../screenshots/settings.png" width="300" alt="The panel with Settings open, showing Keep display on, Count all-day events, Ignore events marked Free, Wake before, Stay awake after, Stay awake while apps are working, Wake Mac from sleep for events, Check for new events and Calendars, with Launch at Login at the bottom.">
 </p>
 
 ## All settings
@@ -17,6 +17,7 @@ Everything in MacAwake lives in one panel. Click the coffee cup ☕ in the menu 
 | **Ignore events marked Free** | Skips events you've set to show as "Free". | Off |
 | **Wake before** | Starts keeping your Mac awake a few minutes before each event. | 2 min |
 | **Stay awake after** | Keeps your Mac awake a few minutes after each event ends. | At end |
+| **Stay awake while apps are working** | Also keeps your Mac awake while apps or tools you pick, such as an AI coding agent, are busy. Click **Add** to choose one, then pick **While working** or **While open** and how long to stay awake after it finishes. Works in Calendar mode while the Mac is awake; it can't wake a sleeping Mac. | Off |
 | **Wake Mac from sleep for events** | Wakes a sleeping Mac before your next event. Needs a one-time **Set Up…**. See [Wake from sleep](wake-from-sleep.md). | On, after setup |
 | **Check for new events** | How often a sleeping Mac briefly wakes to look for new events. | Every 15 min |
 | **Calendars** | Click to choose which calendars count. | All |

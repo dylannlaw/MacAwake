@@ -2,9 +2,15 @@
 
 Design notes and change history. Read these before you change the project (see [`../AGENTS.md`](../AGENTS.md)).
 
+## Plans
+
+- [Process trigger](plans/process-trigger.md): the approved plan for watched apps and commands.
+
 ## Change notes (newest first)
 
 - [2026-11-24 · Feature pages linked from the README](changes/2026-11-24-feature-pages.md): a plain-language page with screenshots for each feature in `docs/features/`, a feature table in the README, and `scripts/screenshots.sh` to retake every screenshot.
+- [2026-11-24 · Automation: URLs, `macawake` command, `macawake run`](changes/2026-11-24-automation.md): `macawake://` commands for scripts and Shortcuts, a bundled CLI, and keep-awake holds while a command runs.
+- [2026-11-24 · Stay awake while apps are working](changes/2026-11-24-process-trigger.md): Calendar mode can also keep the Mac awake while watched apps or command-line tools (for example AI agents) are busy, with a grace period.
 - [2026-11-24 · README screenshots and a demo preview](changes/2026-11-24-readme-screenshots.md): panel screenshots in the README, made with `--preview-panel --demo` sample data; UI changes must update them.
 - [2026-11-24 · README stat badges](changes/2026-11-24-readme-badges.md): downloads, release, stars, macOS and license badges in the README header.
 - [2026-11-24 · Public repo: security review and contribution workflow](changes/2026-11-24-public-repo-security.md): pre-publication security check, hardened release workflow, contribution and security policies, and a script that protects `main`.

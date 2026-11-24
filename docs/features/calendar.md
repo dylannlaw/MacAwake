@@ -40,7 +40,7 @@ In **Settings**, two options stretch each event a little:
 - **Stay awake after:** keep going for a few minutes after the event ends (at end, or 1 to 15 minutes after).
 
 <p align="center">
-  <img src="../screenshots/settings.png" width="300" alt="The panel with Settings open, showing Keep display on, Count all-day events, Ignore events marked Free, Wake before, Stay awake after, Wake Mac from sleep for events, Check for new events and Calendars.">
+  <img src="../screenshots/settings.png" width="300" alt="The panel with Settings open, showing Keep display on, Count all-day events, Ignore events marked Free, Wake before, Stay awake after, Stay awake while apps are working, Wake Mac from sleep for events, Check for new events and Calendars.">
 </p>
 
 ## Good to know

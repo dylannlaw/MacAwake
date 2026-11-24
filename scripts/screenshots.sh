@@ -38,4 +38,4 @@ shot calendar settings.png YES
 
 # Details for the Wake from sleep page, cut from the Settings screenshot.
 crop settings.png wake-header.png 140 1     # header with the "Wakes Mac at" line
-crop settings.png wake.png        120 995   # "Wake Mac from sleep" and "Check for new events"
+crop settings.png wake.png        120 1059  # "Wake Mac from sleep" and "Check for new events"
