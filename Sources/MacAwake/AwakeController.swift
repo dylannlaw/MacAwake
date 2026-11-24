@@ -89,6 +89,17 @@ final class AwakeController: ObservableObject {
     var batterySettings: BatterySettingsStyle? { BatterySettingsStyle.for(device, power: powerState) }
     /// An installed helper is older than the one in this app.
     @Published private(set) var helpersNeedUpdate = false
+    /// A newer MacAwake on GitHub, from the last check.
+    @Published private(set) var availableUpdate: AvailableUpdate?
+    /// Checking for, downloading or installing an update.
+    @Published private(set) var updateBusy = false
+    /// What the update is doing ("Downloading…"), a result ("MacAwake is up to date.") or an error.
+    @Published private(set) var updateMessage: String?
+    @Published private(set) var updateFailed = false
+    /// "Later" hides the notice for this version; a newer one shows it again.
+    @Published private(set) var dismissedUpdateVersion: String? {
+        didSet { defaults.set(dismissedUpdateVersion, forKey: "dismissedUpdateVersion") }
+    }
 
     // MARK: - Settings (persisted in UserDefaults)
 
@@ -166,6 +177,10 @@ final class AwakeController: ObservableObject {
     @Published var excludedCalendarIDs: Set<String> {
         didSet { defaults.set(Array(excludedCalendarIDs), forKey: "excludedCalendarIDs"); refresh() }
     }
+    /// Look for a newer MacAwake on GitHub at launch and once a day.
+    @Published var checkForUpdates: Bool {
+        didSet { defaults.set(checkForUpdates, forKey: "checkForUpdates"); refresh() }
+    }
 
     // MARK: - Internals
 
@@ -201,6 +216,12 @@ final class AwakeController: ObservableObject {
     /// Demo stand-ins for what a real Mac would report: events, busy watched items, `macawake run`
     /// holds and the power source. See `Demo`.
     private var demoEvents: [EKEvent] = []
+    /// Last successful update check, and the earliest time to try again after a failed one.
+    private var lastUpdateCheck: Date?
+    private var nextUpdateAttempt: Date?
+    private var updateMessageTimer: Timer?
+    /// `--preview-panel` copies (demo or not) never check for or install updates.
+    private static let isPreview = CommandLine.arguments.contains("--preview-panel")
     private var demoWorking: [WatchedItem] = []
     private var demoHeld: [String] = []
     private var demoPower = PowerState(onBattery: false, percent: 100, hasBattery: true)
@@ -246,6 +267,9 @@ final class AwakeController: ObservableObject {
         watchedItems = defaults.data(forKey: "watchedItems")
             .flatMap { try? JSONDecoder().decode([WatchedItem].self, from: $0) } ?? []
         watchGraceMinutes = defaults.object(forKey: "watchGraceMinutes") as? Int ?? 5
+        checkForUpdates = defaults.object(forKey: "checkForUpdates") as? Bool ?? true
+        dismissedUpdateVersion = defaults.string(forKey: "dismissedUpdateVersion")
+        availableUpdate = Self.previewUpdate
         wakeHelperInstalled = waker.isHelperInstalled
         lidHelperInstalled = lid.isHelperInstalled
         // A lid status preview shows the lid setting on desktops too. The demo counts as a MacBook (`DeviceKind`).
@@ -581,6 +605,115 @@ final class AwakeController: ObservableObject {
 
         // A battery safeguard pause releases the lid hold too: the Mac isn't being kept awake.
         updateLid(shouldBeAwake: holdAwake)
+
+        checkForUpdatesIfDue(now: now)
+    }
+
+    // MARK: - App updates
+
+    /// Shown in the panel: a newer version the user hasn't put off with "Later".
+    var shownUpdate: AvailableUpdate? {
+        guard let u = availableUpdate, u.version != dismissedUpdateVersion else { return nil }
+        return u
+    }
+
+    /// Debug: `--preview-update 1.0.99` (with `--preview-panel`) shows that version as available,
+    /// for screenshots. Nothing is checked or downloaded.
+    private static let previewUpdate: AvailableUpdate? = {
+        let a = CommandLine.arguments
+        guard isPreview, let i = a.firstIndex(of: "--preview-update"), i + 1 < a.count,
+              let none = URL(string: "https://github.com/\(Updater.repo)/releases")
+        else { return nil }
+        return AvailableUpdate(version: a[i + 1], zipURL: none, checksumURL: none)
+    }()
+
+    /// Hangs off `refresh()`: checks once after launch, then once a day. A failed check waits an hour.
+    private func checkForUpdatesIfDue(now: Date) {
+        guard checkForUpdates, !Self.isPreview, !updateBusy, !Updater.isDevBuild || Updater.isTesting else { return }
+        if let next = nextUpdateAttempt, now < next { return }
+        if let last = lastUpdateCheck, now.timeIntervalSince(last) < 24 * 3600 { return }
+        checkForUpdatesNow(manual: false)
+    }
+
+    /// "Check for Updates…" (manual) shows the result; the automatic check stays quiet unless it finds one.
+    func checkForUpdatesNow(manual: Bool = true) {
+        guard !Self.isPreview, !updateBusy else { return }
+        updateBusy = true
+        if manual { dismissedUpdateVersion = nil; showUpdateMessage("Checking for updates…", sticky: true) }
+        Task {
+            do {
+                let found = try await Updater.checkLatest()
+                availableUpdate = found
+                lastUpdateCheck = Date()
+                nextUpdateAttempt = nil
+                if manual {
+                    showUpdateMessage(found == nil ? "MacAwake \(Updater.currentVersion) is up to date." : nil)
+                }
+            } catch {
+                NSLog("MacAwake: update check failed: \(error.localizedDescription)")
+                nextUpdateAttempt = Date().addingTimeInterval(3600)
+                if manual { showUpdateMessage("Couldn't check for updates: \(error.localizedDescription)", failed: true) }
+            }
+            updateBusy = false
+        }
+    }
+
+    /// "Later": hide the notice until a newer version comes out.
+    func dismissUpdate() {
+        dismissedUpdateVersion = availableUpdate?.version
+        showUpdateMessage(nil)
+    }
+
+    /// Downloads, checks and installs the update, then relaunches. Asks for an administrator password
+    /// only if the app's folder isn't writable.
+    func installUpdate() {
+        guard let update = availableUpdate, !Self.isPreview, !updateBusy else { return }
+        let dest: URL
+        do { dest = try Updater.installedLocation() } catch {
+            return showUpdateMessage(error.localizedDescription, failed: true)
+        }
+        updateBusy = true
+        showUpdateMessage("Downloading MacAwake \(update.version)…", sticky: true)
+        Task {
+            var newApp: URL?
+            do {
+                let app = try await Updater.download(update)
+                newApp = app
+                showUpdateMessage("Installing…", sticky: true)
+                let script = Updater.swapScript(newApp: app, dest: dest)
+                let ok: Bool
+                if Updater.canWriteWithoutAdmin(dest) {
+                    ok = try await Updater.run("/bin/sh", ["-c", script]) == 0
+                } else {
+                    ok = await withCheckedContinuation { cont in
+                        AdminShell.run(script, prompt: "MacAwake wants to install version \(update.version).") {
+                            cont.resume(returning: $0)
+                        }
+                    }
+                }
+                Updater.cleanUp(app)
+                guard ok else { throw UpdateError("Couldn't replace the app. Nothing was changed.") }
+                NSLog("MacAwake: installed \(update.version), relaunching")
+                Updater.relaunchAfterExit(dest)
+                NSApp.terminate(nil)
+            } catch {
+                NSLog("MacAwake: update failed: \(error.localizedDescription)")
+                if let newApp { Updater.cleanUp(newApp) }
+                updateBusy = false
+                showUpdateMessage(error.localizedDescription, failed: true)
+            }
+        }
+    }
+
+    /// Sets the update line. Results clear themselves after a while; progress (sticky) stays.
+    private func showUpdateMessage(_ text: String?, failed: Bool = false, sticky: Bool = false) {
+        updateMessage = text
+        updateFailed = failed
+        updateMessageTimer?.invalidate()
+        guard text != nil, !sticky else { return }
+        updateMessageTimer = Timer.scheduledTimer(withTimeInterval: failed ? 20 : 8, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.updateMessage = nil; self?.updateFailed = false }
+        }
     }
 
     // MARK: - Lid closed

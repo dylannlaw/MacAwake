@@ -8,6 +8,7 @@ struct MacAwakeApp: App {
 
     init() {
         if CommandLine.arguments.contains("--self-test-battery") { runBatterySelfTest() }
+        if CommandLine.arguments.contains("--self-test-update") { runUpdateSelfTest() }
         // Debug: `MacAwake --preview-panel` also shows the panel in a normal window, for screenshots.
         if CommandLine.arguments.contains("--preview-panel") {
             DispatchQueue.main.async { PreviewWindow.show() }
@@ -54,6 +55,11 @@ struct PanelView: View {
                 AgendaSection(controller: controller)
             }
 
+            if controller.shownUpdate != nil || controller.updateMessage != nil {
+                UpdateCard(controller: controller)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+
             SettingsSection(controller: controller, expanded: $showSettings)
 
             Divider()
@@ -73,6 +79,8 @@ struct PanelView: View {
         .animation(.snappy(duration: 0.2), value: controller.mode)
         .animation(.snappy(duration: 0.2), value: pickingDuration.on)
         .animation(.snappy(duration: 0.2), value: showSettings)
+        .animation(.snappy(duration: 0.2), value: controller.shownUpdate)
+        .animation(.snappy(duration: 0.2), value: controller.updateMessage)
         .onChange(of: controller.mode) { _, m in if m == .timed { pickingDuration.on = false } }
     }
 }
@@ -389,6 +397,58 @@ private struct AccessCard: View {
     }
 }
 
+// MARK: - Update
+
+/// "Update available" with Update / Later, or just a status line ("Checking…", "Up to date", an error).
+private struct UpdateCard: View {
+    @ObservedObject var controller: AwakeController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let update = controller.shownUpdate {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.blue)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("MacAwake \(update.version) is out").font(.callout.weight(.semibold))
+                        Text("You have \(Updater.currentVersion)")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 4)
+                    if controller.updateBusy {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Later") { controller.dismissUpdate() }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                        Button("Update") { controller.installUpdate() }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                    }
+                }
+                if controller.updateMessage == nil {
+                    Text("MacAwake restarts by itself. macOS may ask for calendar access again.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let message = controller.updateMessage {
+                HStack(spacing: 6) {
+                    if controller.updateBusy && controller.shownUpdate == nil { ProgressView().controlSize(.mini) }
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(controller.updateFailed ? AnyShapeStyle(.red) : AnyShapeStyle(.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.blue.opacity(0.08)))
+    }
+}
+
 // MARK: - Settings
 
 private struct SettingsSection: View {
@@ -480,6 +540,10 @@ private struct SettingsSection: View {
                     if controller.showsLidSetting {
                         LidSetting(controller: controller)
                     }
+
+                    Divider()
+                    SettingToggle("Check for updates", "arrow.down.circle", $controller.checkForUpdates)
+                        .help("Look for a newer MacAwake on GitHub when it starts and once a day. You choose when to install it.")
 
                     if controller.hasAccess && !controller.calendars.isEmpty {
                         DisclosureGroup {
@@ -721,29 +785,31 @@ private struct Footer: View {
                 .toggleStyle(.checkbox)
                 .font(.caption)
             Spacer()
-            if controller.wakeHelperInstalled || controller.lidHelperInstalled {
-                Menu {
-                    if controller.helpersNeedUpdate {
-                        Button("Update Helpers…") { controller.updateHelpers() }
-                            .disabled(controller.wakeHelperBusy || controller.lidHelperBusy)
-                        Divider()
-                    }
-                    if controller.wakeHelperInstalled {
-                        Button("Remove Wake Helper…") { controller.uninstallWakeHelper() }
-                            .disabled(controller.wakeHelperBusy)
-                    }
-                    if controller.lidHelperInstalled {
-                        Button("Remove Lid-Closed Helper…") { controller.uninstallLidHelper() }
-                            .disabled(controller.lidHelperBusy)
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+            Menu {
+                Text("MacAwake \(Updater.currentVersion)")
+                Button("Check for Updates…") { controller.checkForUpdatesNow() }
+                    .disabled(controller.updateBusy)
+                if controller.wakeHelperInstalled || controller.lidHelperInstalled { Divider() }
+                if controller.helpersNeedUpdate {
+                    Button("Update Helpers…") { controller.updateHelpers() }
+                        .disabled(controller.wakeHelperBusy || controller.lidHelperBusy)
+                    Divider()
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("More")
+                if controller.wakeHelperInstalled {
+                    Button("Remove Wake Helper…") { controller.uninstallWakeHelper() }
+                        .disabled(controller.wakeHelperBusy)
+                }
+                if controller.lidHelperInstalled {
+                    Button("Remove Lid-Closed Helper…") { controller.uninstallLidHelper() }
+                        .disabled(controller.lidHelperBusy)
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
             }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More")
             Button {
                 controller.refresh()
             } label: {
