@@ -75,7 +75,7 @@ A sleeping Mac runs no apps, so MacAwake schedules a hardware wake ahead of time
 | Wake before | 2 min | Starts keeping awake this long before an event. Also sets the wake time. |
 | Stay awake after | At end | Keeps awake this long after an event ends. |
 | Wake Mac from sleep for events | On | Schedules wakes. Shown once the helper is installed. |
-| Check for new events | Every 15 min | Check-in wakes while asleep (`sleepCheckMinutes`: 0, 15, 30, 60). 0 = never. Shown when wake is on. |
+| Check for new events | Every 15 min | Check-in wakes while asleep (`sleepCheckMinutes`: 0, 5, 15, 30, 60). 0 = never. 5 min catches late-added events sooner but wakes the Mac 12 times an hour, which costs more battery. Shown when wake is on. |
 | Calendars | All | Which calendars count. |
 | Launch at Login | Off | Registers the app with `SMAppService`. Works best from /Applications. |
 
