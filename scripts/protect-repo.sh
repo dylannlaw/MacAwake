@@ -16,10 +16,10 @@ if [[ "$(gh api "repos/$REPO" --jq .visibility)" != "public" ]]; then
     exit 1
 fi
 
-echo "→ Merge settings: squash only, delete branches after merge"
+echo "→ Merge settings: squash only, delete branches after merge, allow auto-merge"
 gh api -X PATCH "repos/$REPO" --silent \
     -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false \
-    -F delete_branch_on_merge=true -F allow_auto_merge=false \
+    -F delete_branch_on_merge=true -F allow_auto_merge=true \
     -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=PR_BODY
 
 echo "→ Security features: private vulnerability reporting, secret scanning, push protection, Dependabot alerts"

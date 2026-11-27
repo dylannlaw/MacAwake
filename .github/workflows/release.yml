@@ -20,7 +20,9 @@ name: Build & Release
 
 # Only changes to what ships build and release: the app code, helpers, packaging files and this workflow.
 # Documentation, tests, screenshots and other repo files never trigger a build or a new release.
-# (workflow_dispatch still lets you build by hand.) Keep the two lists the same.
+# (workflow_dispatch still lets you build by hand.) Keep the two lists the same, except that pull requests
+# also build when any workflow changes: "build" is a required check, so a Dependabot update to
+# tests.yml alone could otherwise never merge. That build doesn't release.
 on:
   push:
     branches: [main]
@@ -46,7 +48,7 @@ on:
       - "VERSION"
       - "build.sh"
       - "install.sh"
-      - ".github/workflows/release.yml"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 permissions:

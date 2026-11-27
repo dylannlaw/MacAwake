@@ -1,7 +1,16 @@
 # Proposes updates to the GitHub Actions used in .github/workflows (they're pinned to commit SHAs).
+# cooldown: version updates wait until a release is 7 days old, so a compromised or broken release has
+# time to be found. Security updates aren't delayed.
+# groups: minor and patch updates come as one pull request, so there is one approval instead of several.
+# Every Dependabot pull request gets auto-merge turned on (dependabot-auto-merge.yml); approving it merges it.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        update-types: [minor, patch]

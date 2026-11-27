@@ -235,7 +235,7 @@ Every push to `main` that changes the app runs [`.github/workflows/release.yml`]
 - Only runs when something that ships changes: `Sources/`, `Helper/`, `Resources/`, `Info.plist`, `MacAwake.entitlements`, `Package.swift`, `VERSION`, `build.sh`, `install.sh` or the workflow itself (or when started by hand). Changes to documentation, tests, scripts or screenshots neither build nor release.
 - Doesn't release for pull requests (they're only built).
 
-The workflow is split into a `build` job (read-only token) and a `release` job (the only one that can write, and only on `main`). It uses `pull_request`, never `pull_request_target`, so pull requests from forks get no secrets. Signing secrets go only to the step that uses them, never to `build.sh`. Actions are pinned to commit SHAs, and Dependabot (`.github/dependabot.yml`) proposes updates monthly.
+The workflow is split into a `build` job (read-only token) and a `release` job (the only one that can write, and only on `main`). It uses `pull_request`, never `pull_request_target`, so pull requests from forks get no secrets. Signing secrets go only to the step that uses them, never to `build.sh`. Actions are pinned to commit SHAs, and Dependabot (`.github/dependabot.yml`) proposes updates monthly, once a release is 7 days old, with minor and patch updates grouped into one pull request. [`.github/workflows/dependabot-auto-merge.yml`](.github/workflows/dependabot-auto-merge.yml) turns on auto-merge for each one, so approving it squash-merges it once `build` passes. Pull requests that change any workflow are built (not released), so `build` always reports on a Dependabot update.
 
 To change the major or minor version, edit `VERSION`.
 
@@ -476,6 +476,7 @@ Outside contributors fork the repo and open a pull request; see [CONTRIBUTING.md
 **Repository protection.** `scripts/protect-repo.sh` sets up GitHub (run it once the repo is public; GitHub Free has no rulesets for private repos):
 - A ruleset on `main` blocks direct pushes, force pushes and deletion. Changes need a pull request with one code-owner approval, the `build` check passing, resolved review threads and a linear history (squash merge only).
 - Admins can bypass only through a pull request, so the maintainer can merge their own PRs but still can't push to `main`.
+- Auto-merge is allowed, for Dependabot pull requests: they still need the approval and the `build` check.
 - Only people with write access can merge. The maintainer is the only collaborator, and outside contributors work from forks.
 - Workflows from first-time and outside contributors wait for approval before they run.
 - Private vulnerability reporting, secret scanning, push protection and Dependabot alerts are on.
